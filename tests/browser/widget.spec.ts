@@ -231,6 +231,25 @@ test('the draft survives a reload', async ({ page }) => {
 	await expect(part(page, 'item').locator('img')).toBeVisible();
 });
 
+test('a stored draft that is not well formed is ignored', async ({ page }) => {
+	await page.goto('/');
+	await page.evaluate(() =>
+		sessionStorage.setItem(
+			'hmm:draft:demo',
+			JSON.stringify({
+				category: 'idea',
+				comment: 'stale',
+				items: [{ id: 'x', type: 'element' }],
+				attachments: [],
+			}),
+		),
+	);
+	await page.reload();
+	await part(page, 'launcher').click();
+	await expect(part(page, 'comment')).toHaveValue('');
+	await expect(part(page, 'item')).toHaveCount(0);
+});
+
 test('a failed send is queued and delivered on the next visit', async ({ page, request }) => {
 	await page.goto('/');
 	await request.get('/__fail?n=1');
