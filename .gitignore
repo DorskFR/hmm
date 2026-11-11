@@ -1,0 +1,9 @@
+node_modules
+/dist
+/test-results
+/playwright-report
+/tmp
+.env
+.env.*
+!.env.example
+/src/version.ts
