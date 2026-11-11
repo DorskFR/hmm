@@ -1,0 +1,70 @@
+{
+	"name": "@dorsk/hmm",
+	"version": "0.1.0",
+	"description": "Drop-in feedback widget: select an element, comment, attach a screenshot, review what will be sent, and post it to your own endpoint.",
+	"type": "module",
+	"license": "MIT",
+	"author": "Dorsk <dorsk.dev@gmail.com>",
+	"homepage": "https://github.com/DorskFR/hmm",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/DorskFR/hmm.git"
+	},
+	"bugs": {
+		"url": "https://github.com/DorskFR/hmm/issues"
+	},
+	"keywords": [
+		"feedback",
+		"widget",
+		"screenshot",
+		"picker",
+		"bug-report",
+		"shadow-dom",
+		"vanilla"
+	],
+	"files": [
+		"dist",
+		"schema"
+	],
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./envelope": {
+			"types": "./dist/envelope.d.ts",
+			"default": "./dist/envelope.js"
+		},
+		"./hmm.iife.js": "./dist/hmm.iife.js",
+		"./schema/envelope.v1.json": "./schema/envelope.v1.json",
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"scripts": {
+		"build": "node scripts/version.mjs && rm -rf dist && tsc -p tsconfig.build.json && node scripts/bundle.mjs",
+		"check": "node scripts/version.mjs && tsc -p tsconfig.json",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"demo": "npm run build && node demo/serve.mjs 4188",
+		"test": "npm run build && playwright test",
+		"test:unit": "playwright test --project unit",
+		"prepare": "lefthook install || true",
+		"prepublishOnly": "npm run build"
+	},
+	"dependencies": {
+		"modern-screenshot": "^4.7.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.12",
+		"@playwright/test": "^1.64.1",
+		"@types/node": "^26.4.1",
+		"ajv": "^8.17.1",
+		"esbuild": "^0.28.2",
+		"lefthook": "^2.1.12",
+		"typescript": "^7.0.2"
+	}
+}

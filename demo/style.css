@@ -1,0 +1,58 @@
+body {
+	margin: 0;
+	font: 16px/1.5 system-ui, sans-serif;
+	background: #f4f4f7;
+	color: #222;
+}
+header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 24px;
+	background: #fff;
+	border-bottom: 1px solid #ddd;
+}
+header h1 {
+	margin: 0;
+	font-size: 20px;
+}
+main {
+	display: grid;
+	gap: 16px;
+	max-width: 720px;
+	margin: 24px auto;
+	padding: 0 16px;
+}
+.card {
+	padding: 16px;
+	background: #fff;
+	border: 1px solid #ddd;
+	border-radius: 10px;
+}
+.price {
+	font-size: 22px;
+	font-weight: 600;
+}
+button {
+	padding: 8px 14px;
+	border: 0;
+	border-radius: 6px;
+	background: #0a7d4f;
+	color: #fff;
+	font: inherit;
+}
+button.ghost {
+	background: transparent;
+	color: #0a7d4f;
+	border: 1px solid #0a7d4f;
+}
+label {
+	display: block;
+	margin: 8px 0;
+}
+.tall {
+	height: 1200px;
+	padding: 16px;
+	border: 1px dashed #bbb;
+	border-radius: 10px;
+}
