@@ -2,6 +2,8 @@ import { type APIRequestContext, expect, type Page, test } from '@playwright/tes
 import type { Envelope } from '../../src/envelope.ts';
 
 const part = (page: Page, id: string) => page.locator(`[data-hmm] [data-id="${id}"]`);
+const category = (page: Page, name: string) =>
+	page.locator('[data-hmm]').getByRole('radio', { name });
 const received = async (request: APIRequestContext): Promise<Envelope[]> =>
 	(await request.get('/__reports')).json();
 
@@ -32,13 +34,14 @@ test('a comment is reviewed, sent and received as a valid report', async ({ page
 	await page.goto('/');
 	await part(page, 'launcher').click();
 	await expect(part(page, 'review')).toBeDisabled();
-	await part(page, 'category-problem').click();
+	await category(page, 'Problem').click();
 	await part(page, 'comment').fill('The price is hard to read');
 
 	await part(page, 'review').click();
 	await expect(part(page, 'review-body')).toContainText('The price is hard to read');
 	await expect(part(page, 'review-body')).toContainText('Problem');
-	await expect(part(page, 'raw')).toContainText('"appVersion": "1.2.3"');
+	await part(page, 'raw').getByRole('button').click();
+	await expect(part(page, 'raw').getByText('"appVersion": "1.2.3"')).toBeVisible();
 	expect(await received(request)).toHaveLength(0);
 
 	await part(page, 'send').click();
@@ -218,7 +221,7 @@ test('secrets are scrubbed before the review and never leave the page', async ({
 test('the draft survives a reload', async ({ page }) => {
 	await page.goto('/');
 	await part(page, 'launcher').click();
-	await part(page, 'category-question').click();
+	await category(page, 'Question').click();
 	await part(page, 'comment').fill('Is there a dark mode?');
 	await pick(page, '#buy');
 	await part(page, 'item-comment').fill('here');
@@ -226,7 +229,7 @@ test('the draft survives a reload', async ({ page }) => {
 	await page.reload();
 	await part(page, 'launcher').click();
 	await expect(part(page, 'comment')).toHaveValue('Is there a dark mode?');
-	await expect(part(page, 'category-question')).toHaveAttribute('aria-checked', 'true');
+	await expect(category(page, 'Question')).toHaveAttribute('aria-checked', 'true');
 	await expect(part(page, 'item-comment')).toHaveValue('here');
 	await expect(part(page, 'item').locator('img')).toBeVisible();
 });
@@ -370,91 +373,45 @@ test('init validates its options and replaces a previous instance', async ({ pag
 	await expect(page.locator('[data-hmm]')).toHaveCount(1);
 });
 
-test('host page styles do not leak into the widget', async ({ page }) => {
-	await page.goto('/bare.html');
-	await page.addStyleTag({
-		content: 'button, textarea, section { display: none !important; }',
+const surface = (page: Page) =>
+	page.evaluate(() => {
+		const probe = document.createElement('div');
+		probe.style.background = 'var(--surface)';
+		document.body.append(probe);
+		const color = getComputedStyle(probe).backgroundColor;
+		probe.remove();
+		return color;
 	});
-	await page.evaluate(() =>
-		(window as any).hmm.init({ projectKey: 'bare', endpoint: location.origin }),
-	);
+const background = (page: Page, id: string) =>
+	part(page, id).evaluate((el) => getComputedStyle(el).backgroundColor);
+
+test('the panel is drawn with the host theme and follows a theme switch', async ({ page }) => {
+	await page.goto('/');
 	await part(page, 'launcher').click();
-	await expect(part(page, 'comment')).toBeVisible();
+	const light = await surface(page);
+	expect(await background(page, 'panel')).toBe(light);
+
+	await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dracula'));
+	const dark = await surface(page);
+	expect(dark).not.toBe(light);
+	await expect.poll(() => background(page, 'panel')).toBe(dark);
 });
 
-const look = (page: Page, id: string) =>
-	part(page, id).evaluate((el) => {
-		const style = getComputedStyle(el);
-		return {
-			font: style.fontFamily,
-			size: style.fontSize,
-			color: style.color,
-			background: style.backgroundColor,
-		};
-	});
+test('as a component, the host opens it and reads its state', async ({ page, request }) => {
+	await page.goto('/component.html');
+	await expect(part(page, 'launcher')).toHaveCount(0);
+	await expect(page.getByTestId('host-state')).toHaveText('closed');
+	await page.getByTestId('host-open').click();
+	await expect(page.getByTestId('host-state')).toHaveText('open');
+	await expect(part(page, 'comment')).toBeFocused();
 
-test('the panel takes its font, colours and accent from the page', async ({ page }) => {
-	await page.goto('/bare.html');
-	await page.addStyleTag({
-		content: `
-			html { background: rgb(12, 20, 30); accent-color: rgb(250, 120, 10); }
-			body { background: transparent; color: rgb(200, 210, 220); font: 17px Georgia, serif; }
-			html[data-theme='paper'] { background: rgb(250, 245, 230); accent-color: auto; }
-			html[data-theme='paper'] body { color: rgb(40, 30, 20); }
-		`,
-	});
-	await page.evaluate(() =>
-		(window as any).hmm.init({ projectKey: 'bare', endpoint: location.origin }),
-	);
-	await part(page, 'launcher').click();
-	await part(page, 'comment').fill('Looks native');
-
-	expect(await look(page, 'panel')).toEqual({
-		font: 'Georgia, serif',
-		size: '17px',
-		color: 'rgb(200, 210, 220)',
-		background: 'rgb(12, 20, 30)',
-	});
-	expect(await look(page, 'comment')).toMatchObject({
-		font: 'Georgia, serif',
-		color: 'rgb(200, 210, 220)',
-	});
-	expect(await look(page, 'review')).toMatchObject({
-		color: 'rgb(12, 20, 30)',
-		background: 'rgb(250, 120, 10)',
-	});
-
-	await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'paper'));
-	await expect
-		.poll(() => look(page, 'panel'))
-		.toMatchObject({ color: 'rgb(40, 30, 20)', background: 'rgb(250, 245, 230)' });
-	expect(await look(page, 'review')).toMatchObject({
-		color: 'rgb(250, 245, 230)',
-		background: 'rgb(40, 30, 20)',
-	});
-});
-
-test('custom properties override what was read from the page', async ({ page }) => {
-	await page.goto('/bare.html');
-	await page.addStyleTag({
-		content: ':root { --hmm-bg: rgb(1, 2, 3); --hmm-accent: rgb(4, 5, 6); }',
-	});
-	await page.evaluate(() =>
-		(window as any).hmm.init({ projectKey: 'bare', endpoint: location.origin }),
-	);
-	await part(page, 'launcher').click();
-	await part(page, 'comment').fill('Override');
-	expect(await look(page, 'panel')).toMatchObject({ background: 'rgb(1, 2, 3)' });
-	expect(await look(page, 'review')).toMatchObject({ background: 'rgb(4, 5, 6)' });
-});
-
-test('a script tag with data attributes starts the widget', async ({ page, request }) => {
-	await page.goto('/auto.html');
-	await expect(part(page, 'launcher')).toHaveClass(/left/);
-	await part(page, 'launcher').click();
-	await part(page, 'comment').fill('from a script tag');
+	await part(page, 'comment').fill('from a component');
 	await sendDraft(page);
 	await expect(part(page, 'message')).toBeVisible();
 	const [report] = await received(request);
-	expect(report).toMatchObject({ project: 'auto-demo', comment: 'from a script tag' });
+	expect(report).toMatchObject({ project: 'component', comment: 'from a component' });
+
+	await part(page, 'done').click();
+	await expect(page.getByTestId('host-state')).toHaveText('closed');
+	await expect(part(page, 'panel')).toHaveCount(0);
 });

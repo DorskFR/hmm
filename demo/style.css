@@ -1,58 +1,52 @@
-body {
-	margin: 0;
-	font: 16px/1.5 system-ui, sans-serif;
-	background: #f4f4f7;
-	color: #222;
-}
-header {
+body > header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 12px 24px;
-	background: #fff;
-	border-bottom: 1px solid #ddd;
+	padding: var(--sp-3) var(--sp-6);
+	border-bottom: var(--edge-width) solid var(--surface-edge);
+	background: var(--surface);
 }
-header h1 {
+body > header h1 {
 	margin: 0;
-	font-size: 20px;
+	font-size: var(--fs-lg);
 }
 main {
 	display: grid;
-	gap: 16px;
-	max-width: 720px;
-	margin: 24px auto;
-	padding: 0 16px;
+	gap: var(--sp-4);
+	max-width: 45rem;
+	margin: var(--sp-6) auto;
+	padding: 0 var(--sp-4);
 }
-.card {
-	padding: 16px;
-	background: #fff;
-	border: 1px solid #ddd;
-	border-radius: 10px;
+.product {
+	padding: var(--sp-4);
+	border: var(--edge-width) solid var(--surface-edge);
+	border-radius: var(--r-lg);
+	background: var(--surface);
 }
 .price {
-	font-size: 22px;
+	font-size: var(--fs-xl);
 	font-weight: 600;
 }
-button {
-	padding: 8px 14px;
+.product button {
+	padding: var(--sp-2) var(--sp-4);
 	border: 0;
-	border-radius: 6px;
+	border-radius: var(--r-md);
 	background: #0a7d4f;
 	color: #fff;
 	font: inherit;
 }
-button.ghost {
+.product button.ghost {
+	border: 1px solid #0a7d4f;
 	background: transparent;
 	color: #0a7d4f;
-	border: 1px solid #0a7d4f;
 }
-label {
+.product label {
 	display: block;
-	margin: 8px 0;
+	margin: var(--sp-2) 0;
 }
 .tall {
-	height: 1200px;
-	padding: 16px;
-	border: 1px dashed #bbb;
-	border-radius: 10px;
+	height: 75rem;
+	padding: var(--sp-4);
+	border: 1px dashed var(--surface-edge);
+	border-radius: var(--r-lg);
 }

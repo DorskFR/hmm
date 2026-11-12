@@ -19,7 +19,6 @@ export const LABELS = {
 	review: 'Review',
 	back: 'Back',
 	send: 'Send',
-	sending: 'Sending…',
 	reviewIntro: 'This is everything that will be sent.',
 	category: 'Type',
 	page: 'Page',

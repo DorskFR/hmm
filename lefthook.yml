@@ -4,6 +4,9 @@ pre-commit:
     biome:
       glob: '*.{ts,js,mjs}'
       run: npx biome check --no-errors-on-unmatched {staged_files}
+    tsumikit-lint:
+      glob: 'src/*.svelte'
+      run: npx tsumikit-lint src
 
 pre-push:
   commands:

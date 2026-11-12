@@ -1,11 +1,10 @@
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateEnvelope } from '../dist/envelope.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const dist = resolve(root, '..', 'dist');
 const port = Number(process.argv[2]) || 4188;
 const MAX_BODY = 32 * 1024 * 1024;
 
@@ -13,6 +12,7 @@ const MIME = {
 	'.html': 'text/html; charset=utf-8',
 	'.js': 'text/javascript; charset=utf-8',
 	'.css': 'text/css; charset=utf-8',
+	'.woff2': 'font/woff2',
 };
 const CORS = {
 	'access-control-allow-origin': '*',
@@ -20,7 +20,6 @@ const CORS = {
 	'access-control-allow-methods': 'POST, OPTIONS',
 };
 
-// Held in memory only: this receiver exists for the demo and the tests.
 let reports = [];
 let failures = 0;
 
@@ -67,7 +66,6 @@ async function receive(req, res) {
 }
 
 function fileFor(pathname) {
-	if (pathname === '/hmm.iife.js') return join(dist, 'hmm.iife.js');
 	const clean = normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');
 	const file = join(root, clean === '/' || clean === '\\' ? 'index.html' : clean);
 	return file.startsWith(root) ? file : null;

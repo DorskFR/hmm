@@ -1,13 +1,14 @@
 # @dorsk/hmm
 
-A drop-in feedback widget for any web app. The user opens "Send feedback", selects elements on the
-page, comments on them, adds screenshots, reviews exactly what will be sent, and sends it to an
-endpoint you own.
+A feedback panel for Svelte 5 apps built on [tsumikit](https://github.com/DorskFR/tsumikit). The
+user opens "Send feedback", selects elements on the page, comments on them, adds screenshots,
+reviews exactly what will be sent, and sends it to an endpoint you own.
 
-It is plain TypeScript with no framework, renders inside a Shadow DOM so host styles and widget
-styles cannot affect each other, and ships as an ES module and as a single script file.
+The panel is made of tsumikit components (`Card`, `Button`, `Textarea`, `SegmentedControl`, …), so
+it has no palette, font or control shapes of its own: it looks like the app it is in and follows
+its theme.
 
-![The widget open on a demo page, with a selected element and a screenshot](docs/widget.png)
+![The panel open on a demo page, with a selected element and a screenshot](docs/widget.png)
 
 ## Install
 
@@ -15,61 +16,63 @@ styles cannot affect each other, and ships as an ES module and as a single scrip
 npm install @dorsk/hmm
 ```
 
+`svelte` (^5) and `@dorsk/tsumikit` (>=0.82.0 <1) are peer dependencies: the panel is rendered by
+the copies your app already has. The app must load tsumikit's stylesheet, as any tsumikit app does.
+
+```svelte
+<script lang="ts">
+	import { Hmm } from '@dorsk/hmm';
+</script>
+
+<Hmm
+	projectKey="my-app"
+	endpoint="https://feedback.example.com"
+	context={() => ({ appVersion: '1.4.2', route: currentRouteName() })}
+/>
+```
+
+Render it once, near the root of the app. To open it from your own button, hide the floating one
+and bind `open`:
+
+```svelte
+<Button onclick={() => (feedbackOpen = true)}>Feedback</Button>
+<Hmm projectKey="my-app" endpoint="…" launcher={false} bind:open={feedbackOpen} />
+```
+
+Outside a Svelte tree, `init` mounts the same component on `<body>`:
+
 ```ts
 import { init } from '@dorsk/hmm';
 
-const feedback = init({
-	projectKey: 'my-app',
-	endpoint: 'https://feedback.example.com',
-	context: () => ({ appVersion: '1.4.2', route: currentRouteName() }),
-});
+const feedback = init({ projectKey: 'my-app', endpoint: 'https://feedback.example.com' });
+feedback.open();
 ```
 
-Or with a script tag and no build step:
+`init` returns `{ open(), close(), destroy(), isOpen }`. Calling it again replaces the previous
+instance.
 
-```html
-<script
-	src="https://unpkg.com/@dorsk/hmm/dist/hmm.iife.js"
-	data-project-key="my-app"
-	data-endpoint="https://feedback.example.com"
-></script>
-```
+## Props
 
-The script also exposes `window.hmm`, so `hmm.init({ ... })` works when you need more options than
-the data attributes offer.
+`init` takes the same fields as an object.
 
-## Options
-
-| Option | Type | Purpose |
+| Prop | Type | Purpose |
 |---|---|---|
 | `projectKey` | `string` | Required. Public identifier of the project, sent with every report. Letters, digits, `.`, `_` and `-`. |
 | `endpoint` | `string` | Base URL of the ingest server. Required unless `transport` is set. |
 | `transport` | `(envelope) => Promise<void>` | Replaces the HTTP POST, for hosts that relay reports through their own backend. Throw an error with `retryable: false` to mark a permanent failure. |
 | `context` | `() => object` | Extra data added to every report. May be async. |
 | `beforeSend` | `(envelope) => envelope \| null` | Change a report, or drop it by returning `null`. Runs before the review, so the user sees the result. |
-| `launcher` | `boolean` | `false` hides the floating button; call `open()` from your own UI. |
+| `launcher` | `boolean` | `false` hides the floating button. |
 | `position` | `'bottom-right' \| 'bottom-left'` | Corner for the button and the panel. |
 | `labels` | `Partial<Labels>` | Override any text. The defaults are exported as `LABELS`. |
 | `onSent` | `(envelope) => void` | Called after a report is delivered. |
+| `open` | `boolean` | Bindable. Whether the panel is shown. |
 
-`init` returns `{ open(), close(), destroy(), isOpen }`. Calling `init` again replaces the previous
-instance.
+## Styling
 
-## Theming
-
-The widget has no palette or font of its own. It takes them from the page it is on:
-
-- font, text colour and `color-scheme` are inherited from `<body>`
-- the panel background is the page background (the first opaque `background-color` from `<body>` up)
-- the accent is the page's `accent-color` if one is set, otherwise the text colour
-- borders and muted text are mixed from the text colour
-
-It re-reads these when the panel opens and when `class`, `style` or `data-theme` change on `<html>`
-or `<body>`, so a theme switch is followed.
-
-Page CSS rules do not reach inside (the widget lives in a Shadow DOM). Four optional custom
-properties on `[data-hmm]` or any ancestor override what was measured: `--hmm-bg`, `--hmm-accent`,
-`--hmm-radius`, `--hmm-z-index`.
+Colours, spacing, radii and type come from the tsumikit tokens in scope where `Hmm` is rendered, so
+a `data-theme` switch or a token override on an ancestor applies to the panel too. The panel sits
+at `--z-toast`; set `--hmm-z-index` on an ancestor to move it.
 
 ## What is sent
 
@@ -140,6 +143,8 @@ make the text safe to render or to hand to an agent, and it does not decode the 
 
 ## Limitations
 
+- Svelte 5 and tsumikit only. A page without tsumikit's stylesheet renders the panel unstyled.
+- An open `<dialog>` modal makes the rest of the page inert, the panel included.
 - Screenshots are rendered from the DOM, not captured from the screen. Cross-origin images without
   CORS, `<video>`, and canvases tainted by cross-origin content come out blank.
 - A strict Content Security Policy must allow `data:` in `img-src` for the thumbnails.
@@ -151,8 +156,8 @@ make the text safe to render or to hand to an agent, and it does not decode the 
 npm install
 npm run demo     # demo shop on http://localhost:4188 with an in-memory receiver
 npm test         # unit tests and Chromium browser tests
-npm run lint
-npm run check
+npm run lint     # biome and tsumikit-lint
+npm run check    # svelte-check
 ```
 
 MIT licensed.

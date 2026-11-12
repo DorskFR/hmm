@@ -1,5 +1,7 @@
 node_modules
 /dist
+/demo/build
+/.svelte-kit
 /test-results
 /playwright-report
 /tmp

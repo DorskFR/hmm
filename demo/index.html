@@ -4,29 +4,30 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>hmm demo shop</title>
+		<link rel="stylesheet" href="/build/main.css" />
 		<link rel="stylesheet" href="/style.css" />
 	</head>
 	<body>
 		<header>
 			<h1>Demo shop</h1>
-			<nav><a href="/">Home</a> <a href="/bare.html">Bare page</a></nav>
+			<nav><a href="/">Home</a> <a href="/component.html">Component</a> <a href="/bare.html">Bare page</a></nav>
 		</header>
 		<main>
-			<article class="card" id="product">
+			<article class="product" id="product">
 				<h2>Mechanical keyboard</h2>
 				<p class="price">¥12,800</p>
 				<p>Hot-swappable switches, aluminium case, USB-C.</p>
 				<button id="buy" type="button">Add to cart</button>
 				<button class="ghost" type="button" data-testid="wishlist">Save for later</button>
 			</article>
-			<article class="card">
+			<article class="product">
 				<h2>Newsletter</h2>
 				<label>Email <input name="email" type="email" placeholder="you@example.com" /></label>
 				<label>Password <input name="password" type="password" value="hunter2-secret" /></label>
 			</article>
 			<div class="tall">Scroll area</div>
 		</main>
-		<script src="/hmm.iife.js"></script>
+		<script src="/build/main.js"></script>
 		<script>
 			hmm.init({
 				projectKey: 'demo',

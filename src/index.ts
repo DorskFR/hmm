@@ -1,6 +1,8 @@
-import { httpTransport } from './transport.ts';
-import { type Hmm, mount, type Options } from './ui.ts';
+import { mount, unmount } from 'svelte';
+import { type Handle, type Options, transportOf } from './core.ts';
+import Hmm from './Hmm.svelte';
 
+export type { Handle, Options } from './core.ts';
 export {
 	type Attachment,
 	CATEGORIES,
@@ -22,23 +24,28 @@ export {
 export { LABELS, type Labels } from './labels.ts';
 export { redactEnvelope, redactText, redactUrl } from './redact.ts';
 export { httpTransport, SendError, type Transport } from './transport.ts';
-export type { Hmm, Options } from './ui.ts';
 export { VERSION } from './version.ts';
+export { Hmm };
 
-let current: Hmm | null = null;
+let current: Handle | null = null;
 
-/** Mounts the widget. A second call replaces the first instance. */
-export function init(options: Options): Hmm {
-	if (!/^[A-Za-z0-9._-]{1,128}$/.test(options?.projectKey ?? ''))
-		throw new Error(
-			'hmm: projectKey must be 1 to 128 letters, digits, dots, dashes or underscores',
-		);
-	const transport =
-		options.transport ??
-		(options.endpoint ? httpTransport(options.endpoint, options.projectKey) : null);
-	if (!transport) throw new Error('hmm: either endpoint or transport is required');
+/** Mounts `Hmm` on the document body, for hosts without a Svelte tree. A second call replaces the first instance. */
+export function init(options: Options): Handle {
+	transportOf(options);
 	if (!document.body) throw new Error('hmm: call init after the document body exists');
 	current?.destroy();
-	current = mount(options, transport);
-	return current;
+	const component = mount(Hmm, { target: document.body, props: options });
+	const handle: Handle = {
+		open: () => component.show(),
+		close: () => component.hide(),
+		destroy() {
+			void unmount(component);
+			if (current === handle) current = null;
+		},
+		get isOpen() {
+			return component.isOpen();
+		},
+	};
+	current = handle;
+	return handle;
 }
