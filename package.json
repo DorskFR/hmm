@@ -1,6 +1,6 @@
 {
 	"name": "@dorsk/hmm",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Feedback panel for Svelte apps built on tsumikit: select an element, comment, attach a screenshot, review what will be sent, and post it to your own endpoint.",
 	"type": "module",
 	"license": "MIT",
