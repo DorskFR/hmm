@@ -373,15 +373,79 @@ test('init validates its options and replaces a previous instance', async ({ pag
 test('host page styles do not leak into the widget', async ({ page }) => {
 	await page.goto('/bare.html');
 	await page.addStyleTag({
-		content: 'button, textarea, section { display: none !important; } * { font-size: 40px; }',
+		content: 'button, textarea, section { display: none !important; }',
 	});
 	await page.evaluate(() =>
 		(window as any).hmm.init({ projectKey: 'bare', endpoint: location.origin }),
 	);
 	await part(page, 'launcher').click();
 	await expect(part(page, 'comment')).toBeVisible();
-	const size = await part(page, 'comment').evaluate((el) => getComputedStyle(el).fontSize);
-	expect(size).toBe('14px');
+});
+
+const look = (page: Page, id: string) =>
+	part(page, id).evaluate((el) => {
+		const style = getComputedStyle(el);
+		return {
+			font: style.fontFamily,
+			size: style.fontSize,
+			color: style.color,
+			background: style.backgroundColor,
+		};
+	});
+
+test('the panel takes its font, colours and accent from the page', async ({ page }) => {
+	await page.goto('/bare.html');
+	await page.addStyleTag({
+		content: `
+			html { background: rgb(12, 20, 30); accent-color: rgb(250, 120, 10); }
+			body { background: transparent; color: rgb(200, 210, 220); font: 17px Georgia, serif; }
+			html[data-theme='paper'] { background: rgb(250, 245, 230); accent-color: auto; }
+			html[data-theme='paper'] body { color: rgb(40, 30, 20); }
+		`,
+	});
+	await page.evaluate(() =>
+		(window as any).hmm.init({ projectKey: 'bare', endpoint: location.origin }),
+	);
+	await part(page, 'launcher').click();
+	await part(page, 'comment').fill('Looks native');
+
+	expect(await look(page, 'panel')).toEqual({
+		font: 'Georgia, serif',
+		size: '17px',
+		color: 'rgb(200, 210, 220)',
+		background: 'rgb(12, 20, 30)',
+	});
+	expect(await look(page, 'comment')).toMatchObject({
+		font: 'Georgia, serif',
+		color: 'rgb(200, 210, 220)',
+	});
+	expect(await look(page, 'review')).toMatchObject({
+		color: 'rgb(12, 20, 30)',
+		background: 'rgb(250, 120, 10)',
+	});
+
+	await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'paper'));
+	await expect
+		.poll(() => look(page, 'panel'))
+		.toMatchObject({ color: 'rgb(40, 30, 20)', background: 'rgb(250, 245, 230)' });
+	expect(await look(page, 'review')).toMatchObject({
+		color: 'rgb(250, 245, 230)',
+		background: 'rgb(40, 30, 20)',
+	});
+});
+
+test('custom properties override what was read from the page', async ({ page }) => {
+	await page.goto('/bare.html');
+	await page.addStyleTag({
+		content: ':root { --hmm-bg: rgb(1, 2, 3); --hmm-accent: rgb(4, 5, 6); }',
+	});
+	await page.evaluate(() =>
+		(window as any).hmm.init({ projectKey: 'bare', endpoint: location.origin }),
+	);
+	await part(page, 'launcher').click();
+	await part(page, 'comment').fill('Override');
+	expect(await look(page, 'panel')).toMatchObject({ background: 'rgb(1, 2, 3)' });
+	expect(await look(page, 'review')).toMatchObject({ background: 'rgb(4, 5, 6)' });
 });
 
 test('a script tag with data attributes starts the widget', async ({ page, request }) => {

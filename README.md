@@ -57,12 +57,19 @@ instance.
 
 ## Theming
 
-Set these CSS custom properties on `[data-hmm]` or any ancestor:
+The widget has no palette or font of its own. It takes them from the page it is on:
 
-`--hmm-bg`, `--hmm-fg`, `--hmm-muted`, `--hmm-border`, `--hmm-accent`, `--hmm-accent-fg`,
-`--hmm-danger`, `--hmm-radius`, `--hmm-font`, `--hmm-z-index`.
+- font, text colour and `color-scheme` are inherited from `<body>`
+- the panel background is the page background (the first opaque `background-color` from `<body>` up)
+- the accent is the page's `accent-color` if one is set, otherwise the text colour
+- borders and muted text are mixed from the text colour
 
-Without them the widget follows `prefers-color-scheme`.
+It re-reads these when the panel opens and when `class`, `style` or `data-theme` change on `<html>`
+or `<body>`, so a theme switch is followed.
+
+Page CSS rules do not reach inside (the widget lives in a Shadow DOM). Four optional custom
+properties on `[data-hmm]` or any ancestor override what was measured: `--hmm-bg`, `--hmm-accent`,
+`--hmm-radius`, `--hmm-z-index`.
 
 ## What is sent
 

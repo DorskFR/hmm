@@ -120,6 +120,22 @@ export function mount(options: Options, transport: Transport): Hmm {
 		root.append(el('style', {}, STYLES));
 	}
 
+	const adopt = () => {
+		let bg = '';
+		for (let node = host.parentElement; node && !bg; node = node.parentElement) {
+			const color = win.getComputedStyle(node).backgroundColor;
+			if (!/^transparent$|,\s*0\)$|\/\s*0\)$/.test(color)) bg = color;
+		}
+		const own = win.getComputedStyle(host);
+		const set = (name: string, value: string) =>
+			value ? host.style.setProperty(name, value) : host.style.removeProperty(name);
+		set('--_bg', bg);
+		set('--_fg', own.color);
+		set('--_accent', own.accentColor === 'auto' ? '' : own.accentColor);
+	};
+	const themeWatch = new MutationObserver(adopt);
+	const schemeQuery = win.matchMedia('(prefers-color-scheme: dark)');
+
 	let draft: Draft = loadDraft(session, draftKey);
 	let view: 'edit' | 'review' | 'done' = 'edit';
 	let open = false;
@@ -565,6 +581,7 @@ export function mount(options: Options, transport: Transport): Hmm {
 	function show() {
 		if (open) return;
 		open = true;
+		adopt();
 		render();
 		panel.querySelector<HTMLElement>('[data-id="comment"]')?.focus();
 	}
@@ -591,6 +608,12 @@ export function mount(options: Options, transport: Transport): Hmm {
 	win.addEventListener('resize', schedulePins);
 	win.addEventListener('online', flushOutbox);
 	doc.body.append(host);
+	adopt();
+	const watched = { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] };
+	themeWatch.observe(doc.documentElement, watched);
+	themeWatch.observe(doc.body, watched);
+	schemeQuery.addEventListener('change', adopt);
+	win.addEventListener('load', adopt);
 	render();
 	flushOutbox();
 
@@ -603,6 +626,9 @@ export function mount(options: Options, transport: Transport): Hmm {
 			win.removeEventListener('scroll', schedulePins, { capture: true });
 			win.removeEventListener('resize', schedulePins);
 			win.removeEventListener('online', flushOutbox);
+			themeWatch.disconnect();
+			schemeQuery.removeEventListener('change', adopt);
+			win.removeEventListener('load', adopt);
 			host.remove();
 		},
 		get isOpen() {
