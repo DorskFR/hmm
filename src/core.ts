@@ -91,3 +91,17 @@ export const readable = (envelope: Envelope) =>
 		null,
 		2,
 	);
+
+/** Host and path without the scheme; long path segments keep their ends. */
+export function shortUrl(href: string, segment = 16): string {
+	try {
+		const url = new URL(href);
+		const path = url.pathname
+			.split('/')
+			.map((part) => (part.length > segment ? `${part.slice(0, 8)}…${part.slice(-7)}` : part))
+			.join('/');
+		return `${url.host}${path === '/' ? '' : path}${url.search}`;
+	} catch {
+		return href;
+	}
+}
