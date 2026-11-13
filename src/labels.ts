@@ -1,5 +1,5 @@
 export const LABELS = {
-	launcher: 'Feedback',
+	launcher: 'hmm?',
 	title: 'Send feedback',
 	close: 'Close',
 	idea: 'Idea',

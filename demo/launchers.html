@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>hmm launchers</title>
+		<link rel="stylesheet" href="/build/main.css" />
+		<link rel="stylesheet" href="/style.css" />
+	</head>
+	<body>
+		<main>
+			<h1>Launcher forms</h1>
+			<p>
+				Configured from the query string: <code>?launcher=&lt;json&gt;</code>,
+				<code>&amp;label=…</code>, <code>&amp;position=…</code>.
+			</p>
+			<button id="buy" type="button">Add to cart</button>
+		</main>
+		<script src="/build/main.js"></script>
+		<script>
+			const query = new URLSearchParams(location.search);
+			const options = { projectKey: 'launchers', endpoint: location.origin };
+			if (query.has('launcher')) options.launcher = JSON.parse(query.get('launcher'));
+			if (query.has('label')) options.labels = { launcher: query.get('label') };
+			if (query.has('position')) options.position = query.get('position');
+			hmm.init(options);
+		</script>
+	</body>
+</html>

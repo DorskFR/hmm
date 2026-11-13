@@ -1,7 +1,9 @@
 import { mount, unmount } from 'svelte';
 import { type Handle, type Options, transportOf } from './core.ts';
 import Hmm from './Hmm.svelte';
+import HmmTrigger from './HmmTrigger.svelte';
 
+export { hmm } from './controller.svelte.ts';
 export type { Handle, Options } from './core.ts';
 export {
 	type Attachment,
@@ -22,10 +24,22 @@ export {
 	validateEnvelope,
 } from './envelope.ts';
 export { LABELS, type Labels } from './labels.ts';
+export {
+	ALIGNS,
+	type Align,
+	ANCHORS,
+	type Anchor,
+	CORNERS,
+	type Corner,
+	type Launcher,
+	type Look,
+	SIDES,
+	type Side,
+} from './launcher.ts';
 export { redactEnvelope, redactText, redactUrl } from './redact.ts';
 export { httpTransport, SendError, type Transport } from './transport.ts';
 export { VERSION } from './version.ts';
-export { Hmm };
+export { Hmm, HmmTrigger };
 
 let current: Handle | null = null;
 

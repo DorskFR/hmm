@@ -1,5 +1,7 @@
+import type { Snippet } from 'svelte';
 import { type Envelope, LIMITS } from './envelope.ts';
 import type { Labels } from './labels.ts';
+import type { Launcher } from './launcher.ts';
 import { httpTransport, type Transport } from './transport.ts';
 
 export type Options = {
@@ -13,9 +15,12 @@ export type Options = {
 	context?: () => Record<string, unknown> | Promise<Record<string, unknown>>;
 	/** Last chance to change a report, or to drop it by returning null. Runs before the review. */
 	beforeSend?: (envelope: Envelope) => Envelope | null | Promise<Envelope | null>;
-	/** Set to false to hide the floating button and open the panel from your own UI. */
-	launcher?: boolean;
+	/** Built-in launcher: floating, edge tab or corner bubble. `false` leaves opening to `HmmTrigger` or `hmm.open()`. */
+	launcher?: boolean | Launcher;
+	/** @deprecated use `launcher: { form: 'floating', anchor }` */
 	position?: 'bottom-right' | 'bottom-left';
+	/** Replaces the icon and label inside the built-in launcher. */
+	launcherContent?: Snippet;
 	labels?: Partial<Labels>;
 	onSent?: (envelope: Envelope) => void;
 };
