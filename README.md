@@ -4,7 +4,7 @@ A feedback panel for Svelte 5 apps built on [tsumikit](https://github.com/DorskF
 user opens "Send feedback", selects elements on the page, comments on them, adds screenshots,
 reviews exactly what will be sent, and sends it to an endpoint you own.
 
-The panel is made of tsumikit components (`Card`, `Button`, `Textarea`, `SegmentedControl`, …), so
+The panel is made of tsumikit components (`Card`, `Button`, `Field`, `Textarea`, `Disclosure`, …), so
 it has no palette, font or control shapes of its own: it looks like the app it is in and follows
 its theme.
 
@@ -143,7 +143,7 @@ One JSON document, the envelope, described by
 	"v": 1,
 	"id": "b6f0c9a2-…",
 	"kind": "feedback",            // "error" and "alert" are reserved for non-widget clients
-	"category": "idea",            // idea | problem | question | other
+	"category": "idea",            // optional: idea | problem | question | other; the panel does not set it
 	"project": "my-app",
 	"createdAt": "2026-11-12T08:00:00.000Z",
 	"client": { "name": "@dorsk/hmm", "version": "0.1.0" },

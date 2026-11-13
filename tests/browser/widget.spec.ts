@@ -2,8 +2,6 @@ import { type APIRequestContext, expect, type Page, test } from '@playwright/tes
 import type { Envelope } from '../../src/envelope.ts';
 
 const part = (page: Page, id: string) => page.locator(`[data-hmm] [data-id="${id}"]`);
-const category = (page: Page, name: string) =>
-	page.locator('[data-hmm]').getByRole('radio', { name });
 const received = async (request: APIRequestContext): Promise<Envelope[]> =>
 	(await request.get('/__reports')).json();
 
@@ -34,12 +32,14 @@ test('a comment is reviewed, sent and received as a valid report', async ({ page
 	await page.goto('/');
 	await part(page, 'launcher').click();
 	await expect(part(page, 'review')).toBeDisabled();
-	await category(page, 'Problem').click();
-	await part(page, 'comment').fill('The price is hard to read');
+	await expect(part(page, 'subtitle')).toHaveText("Tell us what's on your mind.");
+	await expect(page.locator('[data-hmm]').getByRole('radio')).toHaveCount(0);
+	await page.locator('[data-hmm]').getByLabel('Details').fill('The price is hard to read');
 
 	await part(page, 'review').click();
-	await expect(part(page, 'review-body')).toContainText('The price is hard to read');
-	await expect(part(page, 'review-body')).toContainText('Problem');
+	await expect(part(page, 'subtitle')).toHaveText('This is everything that will be sent.');
+	await expect(part(page, 'said')).toHaveText('The price is hard to read');
+	await expect(part(page, 'review-body')).toContainText('localhost:4188');
 	await part(page, 'raw').getByRole('button').click();
 	await expect(part(page, 'raw').getByText('"appVersion": "1.2.3"')).toBeVisible();
 	expect(await received(request)).toHaveLength(0);
@@ -49,10 +49,10 @@ test('a comment is reviewed, sent and received as a valid report', async ({ page
 
 	const [report, ...rest] = await received(request);
 	expect(rest).toHaveLength(0);
+	expect(report).not.toHaveProperty('category');
 	expect(report).toMatchObject({
 		v: 1,
 		kind: 'feedback',
-		category: 'problem',
 		project: 'demo',
 		comment: 'The price is hard to read',
 		client: { name: '@dorsk/hmm' },
@@ -221,7 +221,6 @@ test('secrets are scrubbed before the review and never leave the page', async ({
 test('the draft survives a reload', async ({ page }) => {
 	await page.goto('/');
 	await part(page, 'launcher').click();
-	await category(page, 'Question').click();
 	await part(page, 'comment').fill('Is there a dark mode?');
 	await pick(page, '#buy');
 	await part(page, 'item-comment').fill('here');
@@ -229,7 +228,6 @@ test('the draft survives a reload', async ({ page }) => {
 	await page.reload();
 	await part(page, 'launcher').click();
 	await expect(part(page, 'comment')).toHaveValue('Is there a dark mode?');
-	await expect(category(page, 'Question')).toHaveAttribute('aria-checked', 'true');
 	await expect(part(page, 'item-comment')).toHaveValue('here');
 	await expect(part(page, 'item').locator('img')).toBeVisible();
 });

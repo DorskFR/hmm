@@ -7,23 +7,21 @@
 		Cluster,
 		CodeBlock,
 		Disclosure,
+		Field,
 		Heading,
 		IconButton,
 		KeyValue,
 		type KeyValueRow,
-		SegmentedControl,
 		Stack,
 		Text,
 		Textarea,
 	} from '@dorsk/tsumikit';
 	import { onMount, tick, untrack } from 'svelte';
 	import { register } from './controller.svelte.ts';
-	import { clamp, type Options, readable, storageOf, transportOf, uid } from './core.ts';
+	import { clamp, type Options, readable, shortUrl, storageOf, transportOf, uid } from './core.ts';
 	import { type Draft, emptyDraft, isEmpty, loadDraft, saveDraft } from './draft.ts';
 	import {
 		type Attachment,
-		CATEGORIES,
-		type Category,
 		type ElementItem,
 		ENVELOPE_VERSION,
 		type Envelope,
@@ -61,7 +59,6 @@
 	const draftKey = $derived(`hmm:draft:${projectKey}`);
 	const outboxKey = $derived(`hmm:outbox:${projectKey}`);
 	const resolved = $derived(resolveLauncher(launcher, position));
-	const categories = $derived(CATEGORIES.map((value) => ({ value, label: L[value] })));
 
 	let host: HTMLElement | undefined;
 	let launcherEl = $state<HTMLElement>();
@@ -88,17 +85,9 @@
 
 	const empty = $derived(isEmpty(draft));
 	const rows = $derived<KeyValueRow[]>(
-		pending
-			? [
-					{
-						label: L.category,
-						value: pending.category ? L[pending.category] : pending.kind,
-					},
-					{ label: L.page, value: pending.page?.url ?? '' },
-					...(pending.comment ? [{ label: L.comment, value: pending.comment }] : []),
-				]
-			: [],
+		pending?.page ? [{ label: L.page, value: shortUrl(pending.page.url) }] : [],
 	);
+	const ids = { title: uid(), comment: uid(), attach: uid() };
 
 	const titleOf = (item: Item) => (item.type === 'element' ? labelOf(item.target) : L.screenshot);
 	const imageOf = (attachments: Attachment[], item: Item) => {
@@ -209,13 +198,12 @@
 	}
 
 	async function build(): Promise<Envelope | null> {
-		const { category, comment, items, attachments } = $state.snapshot(draft) as Draft;
+		const { comment, items, attachments } = $state.snapshot(draft) as Draft;
 		const used = new Set(items.map((item) => item.attachment));
 		const envelope: Envelope = {
 			v: ENVELOPE_VERSION,
 			id: uid(),
 			kind: 'feedback',
-			category,
 			project: projectKey,
 			createdAt: new Date().toISOString(),
 			client: { name: '@dorsk/hmm', version: VERSION },
@@ -397,6 +385,19 @@
 	});
 </script>
 
+{#snippet pointerGlyph()}
+	<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">
+		<path d="M4.04 3.4a.5.5 0 0 1 .64-.64l15.55 6.13a.5.5 0 0 1-.04.95l-6.04 1.83a2 2 0 0 0-1.34 1.34l-1.83 6.04a.5.5 0 0 1-.95.04z" />
+	</svg>
+{/snippet}
+
+{#snippet cameraGlyph()}
+	<svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">
+		<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
+		<circle cx="12" cy="13" r="3" />
+	</svg>
+{/snippet}
+
 {#snippet itemHead(item: Item, n: number)}
 	<Badge tone="accent" size="sm" numeric>{n}</Badge>
 	<Text tone="muted" size="sm" truncate grow data-id="item-label">{titleOf(item)}</Text>
@@ -435,19 +436,32 @@
 				padding="none"
 				surface="raised"
 				role="dialog"
-				aria-label={L.title}
+				aria-labelledby={ids.title}
 				data-id="panel"
 				style="display: flex; flex-direction: column; flex: 1; min-height: 0"
 			>
 				<header class="head">
-					<Heading level={2} size="sm">{L.title}</Heading>
+					<Stack gap="var(--sp-1)">
+						<Heading level={2} size="lg" id={ids.title}>{L.title}</Heading>
+						{#if view !== 'done'}
+							<Text as="p" tone="muted" data-id="subtitle">
+								{view === 'review' ? L.reviewIntro : L.subtitle}
+							</Text>
+						{/if}
+					</Stack>
 					<IconButton icon="x" label={L.close} data-id="close" onclick={hide} />
 				</header>
 
 				{#if view === 'review' && pending}
 					<div class="body" data-id="review-body">
-						<Text as="p" tone="muted" size="sm">{L.reviewIntro}</Text>
-						<KeyValue {rows} />
+						{#if pending.comment}
+							<Stack gap="var(--sp-2)">
+								<Text weight="medium">{L.yourFeedback}</Text>
+								<div class="said" data-id="said">
+									<Text as="p" wrap="anywhere">{pending.comment}</Text>
+								</div>
+							</Stack>
+						{/if}
 						{#each pending.items as item, i (item.id)}
 							{@const image = imageOf(pending.attachments, item)}
 							<Card padding="sm" gap="var(--sp-2)">
@@ -456,26 +470,16 @@
 								{#if image}<img class="shot" src={image} alt={titleOf(item)} />{/if}
 							</Card>
 						{/each}
-						{#if Object.keys(pending.context).length > 0}
-							<Disclosure size="compact">
-								{#snippet header()}{L.context}{/snippet}
-								<CodeBlock
-									code={JSON.stringify(pending.context, null, 2)}
-									lang="json"
-									wrap
-									copy={false}
-									maxHeight="12rem"
-								/>
-							</Disclosure>
-						{/if}
+						<KeyValue {rows} />
 						<Disclosure size="compact" data-id="raw">
-							{#snippet header()}{L.raw}{/snippet}
+							{#snippet header()}{L.technical}{/snippet}
 							<CodeBlock code={readable(pending)} lang="json" wrap copy={false} maxHeight="12rem" />
 						</Disclosure>
 						{#if error}<Callout tone="danger" data-id="error">{error}</Callout>{/if}
 					</div>
-					<footer class="foot">
+					<footer class="foot end">
 						<Button
+							variant="ghost"
 							data-id="back"
 							disabled={!!busy}
 							onclick={() => {
@@ -498,24 +502,17 @@
 					</footer>
 				{:else}
 					<div class="body">
-						<SegmentedControl
-							label={L.category}
-							size="sm"
-							options={categories}
-							value={draft.category}
-							onchange={(value) => {
-								draft.category = value as Category;
-							}}
-						/>
-						<Textarea
-							block
-							rows={3}
-							maxlength={4000}
-							data-id="comment"
-							aria-label={L.comment}
-							placeholder={L.commentPlaceholder}
-							bind:value={draft.comment}
-						/>
+						<Field label={L.details} for={ids.comment}>
+							<Textarea
+								block
+								rows={4}
+								maxlength={4000}
+								id={ids.comment}
+								data-id="comment"
+								placeholder={L.commentPlaceholder}
+								bind:value={draft.comment}
+							/>
+						</Field>
 						{#each draft.items as item, i (item.id)}
 							{@const image = imageOf(draft.attachments, item)}
 							<Card padding="sm" gap="var(--sp-2)" data-id="item">
@@ -555,21 +552,31 @@
 								/>
 							</Card>
 						{/each}
-						<Cluster>
-							<Button size="sm" data-id="pick" disabled={!!busy} onclick={beginPick}>
-								{L.pick}
-							</Button>
-							<Button size="sm" data-id="shot" loading={busy === 'capture'} onclick={addShot}>
-								{L.shot}
-							</Button>
-						</Cluster>
+						<Stack gap="var(--sp-2)" role="group" aria-labelledby={ids.attach}>
+							<Text tone="muted" size="sm" id={ids.attach}>{L.attach}</Text>
+							<Cluster>
+								<Button data-id="pick" glyph={pointerGlyph} disabled={!!busy} onclick={beginPick}>
+									{L.pick}
+								</Button>
+								<Button
+									data-id="shot"
+									glyph={cameraGlyph}
+									loading={busy === 'capture'}
+									onclick={addShot}
+								>
+									{L.shot}
+								</Button>
+							</Cluster>
+						</Stack>
 						{#if busy === 'capture'}
 							<Text as="p" tone="muted" size="sm" role="status">{L.capturing}</Text>
 						{/if}
 						{#if error}<Callout tone="danger" data-id="error">{error}</Callout>{/if}
 					</div>
 					<footer class="foot">
+						<Text tone="muted" size="sm" grow>{L.reviewHint}</Text>
 						<Button
+							variant="ghost"
 							data-id="discard"
 							disabled={!!busy || empty}
 							onclick={() => {
@@ -625,7 +632,7 @@
 		visibility: hidden;
 		display: flex;
 		flex-direction: column;
-		width: 24rem;
+		width: 30rem;
 		max-width: calc(100vw - 2 * var(--sp-4));
 		max-height: min(42rem, calc(100dvh - 2 * var(--sp-4)));
 		border-radius: var(--r-lg);
@@ -640,13 +647,16 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--sp-2);
-		padding: var(--sp-2) var(--sp-3);
+		padding: var(--sp-4);
 	}
 	.head {
-		border-bottom: var(--edge-width) solid var(--surface-edge);
+		align-items: flex-start;
+		padding-bottom: 0;
 	}
 	.foot {
 		border-top: var(--edge-width) solid var(--surface-edge);
+		background: color-mix(in srgb, var(--text) 4%, transparent);
+		border-radius: 0 0 var(--r-lg) var(--r-lg);
 	}
 	.foot.end {
 		justify-content: flex-end;
@@ -654,10 +664,24 @@
 	.body {
 		display: flex;
 		flex-direction: column;
-		gap: var(--sp-3);
+		gap: var(--sp-4);
 		min-height: 0;
-		padding: var(--sp-3);
+		padding: var(--sp-4);
 		overflow-y: auto;
+	}
+	.said {
+		padding: var(--sp-3) var(--sp-4);
+		border-radius: var(--r-md);
+		background: var(--control-fill);
+	}
+	.glyph {
+		width: 1.1em;
+		height: 1.1em;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	.shot {
 		display: block;

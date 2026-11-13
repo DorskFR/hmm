@@ -1,20 +1,12 @@
-import {
-	type Attachment,
-	CATEGORIES,
-	type Category,
-	type Item,
-	validateEnvelope,
-} from './envelope.ts';
+import { type Attachment, type Item, validateEnvelope } from './envelope.ts';
 
 export type Draft = {
-	category: Category;
 	comment: string;
 	items: Item[];
 	attachments: Attachment[];
 };
 
 export const emptyDraft = (): Draft => ({
-	category: 'idea',
 	comment: '',
 	items: [],
 	attachments: [],
@@ -39,8 +31,10 @@ const wellFormed = (draft: Partial<Draft>) =>
 export function loadDraft(storage: Storage | null, key: string): Draft {
 	try {
 		const parsed = JSON.parse(storage?.getItem(key) ?? 'null') as Partial<Draft> | null;
-		if (parsed && CATEGORIES.includes(parsed.category as Category) && wellFormed(parsed))
-			return parsed as Draft;
+		if (parsed && wellFormed(parsed)) {
+			const { comment = '', items = [], attachments = [] } = parsed;
+			return { comment, items, attachments };
+		}
 	} catch {}
 	return emptyDraft();
 }
