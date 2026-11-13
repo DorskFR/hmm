@@ -17,6 +17,7 @@
 		Textarea,
 	} from '@dorsk/tsumikit';
 	import { onMount, tick, untrack } from 'svelte';
+	import { register } from './controller.svelte.ts';
 	import { clamp, type Options, readable, storageOf, transportOf, uid } from './core.ts';
 	import { type Draft, emptyDraft, isEmpty, loadDraft, saveDraft } from './draft.ts';
 	import {
@@ -31,6 +32,8 @@
 		validateEnvelope,
 	} from './envelope.ts';
 	import { describeElement, labelOf } from './inspect.ts';
+	import Launcher from './Launcher.svelte';
+	import { type Corner, type Placement, panelOrigin, placementFor, resolveLauncher } from './launcher.ts';
 	import { LABELS, type Labels } from './labels.ts';
 	import { elementAt } from './picker.ts';
 	import { redactEnvelope } from './redact.ts';
@@ -45,9 +48,10 @@
 		context,
 		beforeSend,
 		launcher = true,
-		position = 'bottom-right',
+		position,
 		labels,
 		onSent,
+		launcherContent,
 		open = $bindable(false),
 	}: Options & { open?: boolean } = $props();
 
@@ -56,9 +60,16 @@
 	untrack(() => deliver);
 	const draftKey = $derived(`hmm:draft:${projectKey}`);
 	const outboxKey = $derived(`hmm:outbox:${projectKey}`);
+	const resolved = $derived(resolveLauncher(launcher, position));
 	const categories = $derived(CATEGORIES.map((value) => ({ value, label: L[value] })));
 
 	let host: HTMLElement | undefined;
+	let launcherEl = $state<HTMLElement>();
+	let panelEl = $state<HTMLElement>();
+	let at = $state<Corner | null>(null);
+	let spot = $state<{ left: number; top: number } | null>(null);
+	let opener: HTMLElement | null = null;
+	const EDGE_MARGIN = 16;
 	let session: Storage | null = null;
 	let local: Storage | null = null;
 	let frame = 0;
@@ -275,13 +286,28 @@
 		onSent?.(envelope);
 	}
 
-	export function show() {
+	export function show(corner?: Corner) {
+		at = corner ?? null;
 		open = true;
 	}
 
 	export function hide() {
 		open = false;
-		void tick().then(() => part('[data-id="launcher"]')?.focus());
+		const back = opener?.isConnected ? opener : part('[data-id="launcher"]');
+		opener = null;
+		void tick().then(() => back?.focus());
+	}
+
+	function placement(): Placement {
+		if (!at && resolved && launcherEl) return placementFor(resolved, launcherEl.getBoundingClientRect());
+		return { mode: 'corner', corner: at ?? (position === 'bottom-left' ? 'bottom-left' : 'bottom-right') };
+	}
+
+	function place() {
+		if (!panelEl) return;
+		const { width, height } = panelEl.getBoundingClientRect();
+		const viewport = { width: innerWidth, height: innerHeight };
+		spot = panelOrigin(placement(), { width, height }, viewport, EDGE_MARGIN, EDGE_MARGIN / 2);
 	}
 
 	export function isOpen() {
@@ -295,10 +321,17 @@
 	}
 
 	$effect(() => {
-		if (open) void tick().then(() => part('[data-id="comment"]')?.focus());
+		if (open)
+			untrack(() => {
+				const focused = document.activeElement;
+				if (!opener && focused instanceof HTMLElement && !host?.contains(focused)) opener = focused;
+				void tick().then(() => part('[data-id="comment"]')?.focus());
+			});
 		else
 			untrack(() => {
 				picking = false;
+				at = null;
+				spot = null;
 				if (view === 'done') view = 'edit';
 			});
 	});
@@ -321,6 +354,18 @@
 	$effect(placePins);
 
 	$effect(() => {
+		if (!panelEl) return;
+		place();
+		const observer = new ResizeObserver(place);
+		observer.observe(panelEl);
+		addEventListener('resize', place);
+		return () => {
+			observer.disconnect();
+			removeEventListener('resize', place);
+		};
+	});
+
+	$effect(() => {
 		if (ready) saveDraft(session, draftKey, $state.snapshot(draft) as Draft);
 	});
 
@@ -329,6 +374,7 @@
 		local = storageOf(() => localStorage);
 		draft = loadDraft(session, draftKey);
 		ready = true;
+		const unregister = register({ show, hide, isOpen });
 
 		const schedulePins = () => {
 			cancelAnimationFrame(frame);
@@ -346,6 +392,7 @@
 			removeEventListener('scroll', schedulePins, { capture: true });
 			removeEventListener('resize', schedulePins);
 			removeEventListener('online', flushOutbox);
+			unregister();
 		};
 	});
 </script>
@@ -359,18 +406,30 @@
 	bind:this={host}
 	data-hmm
 	class="hmm"
-	class:left={position === 'bottom-left'}
 	role="presentation"
 	onkeydown={onKey}
 >
-	{#if launcher && !open && !picking}
-		<div class="corner">
-			<Button pill data-id="launcher" onclick={show}>{L.launcher}</Button>
-		</div>
+	{#if resolved}
+		<Launcher
+			launcher={resolved}
+			label={L.launcher}
+			title={L.title}
+			hidden={picking || (open && resolved.form === 'floating')}
+			active={open}
+			content={launcherContent}
+			onopen={() => (open ? hide() : show())}
+			bind:element={launcherEl}
+		/>
 	{/if}
 
 	{#if open && !picking}
-		<div class="corner panel">
+		<div
+			class="panel"
+			class:placed={spot !== null}
+			bind:this={panelEl}
+			style:left={spot ? `${spot.left}px` : undefined}
+			style:top={spot ? `${spot.top}px` : undefined}
+		>
 			<Card
 				as="section"
 				padding="none"
@@ -558,17 +617,12 @@
 		display: contents;
 		--z: var(--hmm-z-index, var(--z-toast, 300));
 	}
-	.corner {
-		position: fixed;
-		right: var(--sp-4);
-		bottom: var(--sp-4);
-		z-index: var(--z);
-	}
-	.left .corner {
-		right: auto;
-		left: var(--sp-4);
-	}
 	.panel {
+		position: fixed;
+		top: 0;
+		left: 0;
+		z-index: var(--z);
+		visibility: hidden;
 		display: flex;
 		flex-direction: column;
 		width: 24rem;
@@ -576,6 +630,9 @@
 		max-height: min(42rem, calc(100dvh - 2 * var(--sp-4)));
 		border-radius: var(--r-lg);
 		box-shadow: var(--shadow-lg);
+	}
+	.panel.placed {
+		visibility: visible;
 	}
 	.head,
 	.foot {
