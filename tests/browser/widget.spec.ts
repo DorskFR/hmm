@@ -45,7 +45,10 @@ test('a comment is reviewed, sent and received as a valid report', async ({ page
 	expect(await received(request)).toHaveLength(0);
 
 	await part(page, 'send').click();
-	await expect(part(page, 'message')).toHaveText('Thanks, your feedback was sent.');
+	await expect(part(page, 'message')).toHaveText('Your feedback was sent.');
+	await expect(part(page, 'result')).toContainText('Thanks!');
+	await expect(part(page, 'result').getByRole('alert')).toHaveCount(0);
+	await expect(part(page, 'result').locator('[role="status"]')).toHaveCount(0);
 
 	const [report, ...rest] = await received(request);
 	expect(rest).toHaveLength(0);
@@ -258,6 +261,7 @@ test('a failed send is queued and delivered on the next visit', async ({ page, r
 	await part(page, 'comment').fill('sent while the server was down');
 	await sendDraft(page);
 	await expect(part(page, 'message')).toContainText('saved and will be sent automatically');
+	await expect(part(page, 'result')).toContainText('Saved for later');
 	expect(await received(request)).toHaveLength(0);
 
 	await page.reload();
