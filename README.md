@@ -46,6 +46,28 @@ feedback.open();
 `init` returns `{ open(), close(), destroy(), isOpen }`. Calling it again replaces the previous
 instance.
 
+### Without Svelte or tsumikit
+
+`@dorsk/hmm/standalone` is one script with Svelte, the panel and a scoped copy of tsumikit's
+tokens inside. It exposes `Hmm.init`, `Hmm.hmm`, `Hmm.LABELS` and `Hmm.VERSION`:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.4.0/dist/standalone/hmm.js"></script>
+<script>
+	Hmm.init({ projectKey: 'my-app', endpoint: 'https://feedback.example.com' });
+</script>
+```
+
+The tokens and element defaults apply under `[data-hmm]` only, so the page keeps its own colours,
+fonts and resets. `data-theme` on `<html>` (or any ancestor) picks a tsumikit theme for the panel.
+
+A Svelte app that does not load tsumikit's stylesheet can import the same scoped styles instead
+and render `<Hmm>` as usual (`@dorsk/tsumikit` is still needed as a peer dependency):
+
+```ts
+import '@dorsk/hmm/scoped.css';
+```
+
 ## Launchers
 
 ![An edge tab slid in on the right, with the panel open beside it](docs/launchers.png)
@@ -202,7 +224,7 @@ make the text safe to render or to hand to an agent, and it does not decode the 
 
 ## Limitations
 
-- Svelte 5 and tsumikit only. A page without tsumikit's stylesheet renders the panel unstyled.
+- Pages without tsumikit's stylesheet need `@dorsk/hmm/scoped.css` or the standalone script.
 - An open `<dialog>` modal makes the rest of the page inert, the panel included.
 - Screenshots are rendered from the DOM, not captured from the screen. Cross-origin images without
   CORS, `<video>`, and canvases tainted by cross-origin content come out blank.

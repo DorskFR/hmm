@@ -65,7 +65,10 @@ async function receive(req, res) {
 	return json(res, 202, { id: result.envelope.id });
 }
 
+const standalone = fileURLToPath(new URL('../dist/standalone/hmm.js', import.meta.url));
+
 function fileFor(pathname) {
+	if (pathname === '/standalone/hmm.js') return standalone;
 	const clean = normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, '');
 	const file = join(root, clean === '/' || clean === '\\' ? 'index.html' : clean);
 	return file.startsWith(root) ? file : null;

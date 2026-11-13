@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>hmm standalone</title>
+	</head>
+	<body>
+		<h1>A page without Svelte or tsumikit</h1>
+		<p id="copy">The panel comes from one script tag.</p>
+		<script src="/standalone/hmm.js"></script>
+		<script>
+			Hmm.init({ projectKey: 'demo', endpoint: location.origin, context: () => ({ page: 'standalone' }) });
+		</script>
+	</body>
+</html>

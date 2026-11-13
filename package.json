@@ -1,6 +1,6 @@
 {
 	"name": "@dorsk/hmm",
-	"version": "0.3.1",
+	"version": "0.4.0",
 	"description": "Feedback panel for Svelte apps built on tsumikit: select an element, comment, attach a screenshot, review what will be sent, and post it to your own endpoint.",
 	"type": "module",
 	"license": "MIT",
@@ -38,6 +38,8 @@
 			"types": "./dist/envelope.d.ts",
 			"default": "./dist/envelope.js"
 		},
+		"./standalone": "./dist/standalone/hmm.js",
+		"./scoped.css": "./dist/standalone/hmm.css",
 		"./schema/envelope.v1.json": "./schema/envelope.v1.json",
 		"./package.json": "./package.json"
 	},
@@ -46,7 +48,7 @@
 		"provenance": true
 	},
 	"scripts": {
-		"build": "node scripts/version.mjs && svelte-package -i src -o dist && publint && node scripts/bundle.mjs",
+		"build": "node scripts/version.mjs && svelte-package -i src -o dist && node scripts/bundle.mjs && publint",
 		"check": "node scripts/version.mjs && svelte-check --tsconfig ./tsconfig.json",
 		"lint": "biome check . && tsumikit-lint src",
 		"format": "biome check --write .",
