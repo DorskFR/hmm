@@ -2,7 +2,7 @@
 	import { Button } from '@dorsk/tsumikit';
 	import type { Snippet } from 'svelte';
 	import Glyph from './Glyph.svelte';
-	import type { Resolved } from './launcher.ts';
+	import { approach, distance, dragPull, inward, type Resolved } from './launcher.ts';
 
 	let {
 		launcher,
@@ -24,13 +24,26 @@
 		element?: HTMLElement;
 	} = $props();
 
+	const REACH = 96;
+	const SLOP = 8;
+
 	let revealed = $state(false);
-	let pointer = '';
+	let pointer = $state('');
+	let near = $state(0);
+	let drag = $state<number | null>(null);
+	let tab = $state<HTMLButtonElement>();
+	let swipe: { id: number; x: number; y: number; from: number } | null = null;
+	let swallow = false;
 	const tucked = $derived(launcher.form !== 'floating');
 	const iconOnly = $derived(!label || launcher.look === 'icon');
 	const variant = $derived(launcher.look === 'button' ? 'primary' : 'default');
+	const dir = $derived(inward(launcher));
 
 	function onclick() {
+		if (swallow) {
+			swallow = false;
+			return;
+		}
 		if (tucked && pointer === 'touch' && !revealed && !active) {
 			revealed = true;
 			return;
@@ -38,6 +51,61 @@
 		revealed = false;
 		onopen();
 	}
+
+	function ondown(event: PointerEvent) {
+		pointer = event.pointerType;
+		swallow = false;
+		if (!tucked || active || event.pointerType !== 'touch') return;
+		swipe = { id: event.pointerId, x: event.clientX, y: event.clientY, from: revealed ? 1 : 0 };
+	}
+
+	function onmove(event: PointerEvent) {
+		if (!swipe || event.pointerId !== swipe.id || !tab) return;
+		const dx = event.clientX - swipe.x;
+		const dy = event.clientY - swipe.y;
+		if (drag === null && Math.hypot(dx, dy) < SLOP) return;
+		const travel = Math.abs(dir.x) * tab.offsetWidth + Math.abs(dir.y) * tab.offsetHeight;
+		drag = dragPull(swipe.from, dx, dy, dir, travel);
+	}
+
+	function onup(event: PointerEvent) {
+		if (!swipe || event.pointerId !== swipe.id) return;
+		swipe = null;
+		if (drag === null) return;
+		revealed = drag > 0.5;
+		if (!revealed) tab?.blur();
+		drag = null;
+		swallow = true;
+	}
+
+	$effect(() => {
+		if (!tucked || revealed || active) {
+			near = 0;
+			return;
+		}
+		let frame = 0;
+		let at = { x: 0, y: 0 };
+		const measure = () => {
+			frame = 0;
+			const box = element?.getBoundingClientRect();
+			if (box) near = approach(distance(box, at.x, at.y), REACH);
+		};
+		const move = (event: PointerEvent) => {
+			if (event.pointerType === 'touch') return;
+			at = { x: event.clientX, y: event.clientY };
+			frame ||= requestAnimationFrame(measure);
+		};
+		const out = (event: PointerEvent) => {
+			if (!event.relatedTarget) near = 0;
+		};
+		document.addEventListener('pointermove', move, { passive: true });
+		document.addEventListener('pointerout', out);
+		return () => {
+			cancelAnimationFrame(frame);
+			document.removeEventListener('pointermove', move);
+			document.removeEventListener('pointerout', out);
+		};
+	});
 
 	$effect(() => {
 		if (!revealed) return;
@@ -62,7 +130,10 @@
 	bind:this={element}
 	class="launcher {launcher.form}"
 	class:shown={revealed || active}
+	class:dragging={drag !== null}
+	class:touch={pointer === 'touch'}
 	class:hidden
+	style:--pull={drag ?? near}
 	inert={hidden}
 	data-hmm-launcher={launcher.form}
 	data-anchor={launcher.form === 'floating' ? launcher.anchor : undefined}
@@ -83,6 +154,17 @@
 			{@render face()}
 		</Button>
 	{:else}
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div
+			class="zone"
+			aria-hidden="true"
+			data-id="launcher-zone"
+			onpointerdown={ondown}
+			onpointermove={onmove}
+			onpointerup={onup}
+			onpointercancel={onup}
+			{onclick}
+		></div>
 		<!-- tsumikit-lint-ignore no-raw-control -->
 		<button
 			type="button"
@@ -91,7 +173,11 @@
 			{title}
 			aria-label={iconOnly ? title : undefined}
 			data-id="launcher"
-			onpointerdown={(event) => (pointer = event.pointerType)}
+			bind:this={tab}
+			onpointerdown={ondown}
+			onpointermove={onmove}
+			onpointerup={onup}
+			onpointercancel={onup}
 			{onclick}
 		>
 			{#if launcher.form === 'edge'}<span class="grip"></span>{/if}
@@ -108,6 +194,8 @@
 		--along: var(--sp-12);
 		--ox: var(--hmm-offset-x, 0rem);
 		--oy: var(--hmm-offset-y, 0rem);
+		--zone: var(--hmm-zone, var(--sp-8));
+		--pull: 0;
 		position: fixed;
 		z-index: var(--z);
 		pointer-events: none;
@@ -169,6 +257,57 @@
 		border-color: var(--btn-primary-edge);
 		background: var(--btn-primary-fill);
 		color: var(--text-on-accent);
+	}
+	.dragging .tab {
+		transition: none;
+	}
+	.zone {
+		position: absolute;
+		touch-action: none;
+	}
+	.edge .tab,
+	.corner .tab {
+		touch-action: none;
+	}
+	.edge[data-side='right'] .zone {
+		top: calc(-1 * var(--sp-4));
+		right: var(--tuck);
+		bottom: calc(-1 * var(--sp-4));
+		width: var(--zone);
+	}
+	.edge[data-side='left'] .zone {
+		top: calc(-1 * var(--sp-4));
+		bottom: calc(-1 * var(--sp-4));
+		left: var(--tuck);
+		width: var(--zone);
+	}
+	.edge[data-side='top'] .zone {
+		top: var(--tuck);
+		right: calc(-1 * var(--sp-4));
+		left: calc(-1 * var(--sp-4));
+		height: var(--zone);
+	}
+	.edge[data-side='bottom'] .zone {
+		right: calc(-1 * var(--sp-4));
+		bottom: var(--tuck);
+		left: calc(-1 * var(--sp-4));
+		height: var(--zone);
+	}
+	.corner .zone {
+		width: calc(var(--reach) + var(--zone));
+		height: calc(var(--reach) + var(--zone));
+	}
+	.corner[data-corner^='top'] .zone {
+		top: 0;
+	}
+	.corner[data-corner^='bottom'] .zone {
+		bottom: 0;
+	}
+	.corner[data-corner$='left'] .zone {
+		left: 0;
+	}
+	.corner[data-corner$='right'] .zone {
+		right: 0;
 	}
 	.shown .tab,
 	.launcher:hover .tab,
@@ -253,17 +392,17 @@
 	.edge[data-side='bottom'] .grip {
 		top: var(--sp-1);
 	}
-	.edge:not(.shown, :hover, :focus-within)[data-side='right'] .tab {
-		transform: translateX(calc(100% - var(--tuck) - var(--peek)));
+	.edge:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-side='right'] .tab {
+		transform: translateX(calc((100% - var(--tuck) - var(--peek)) * (1 - var(--pull))));
 	}
-	.edge:not(.shown, :hover, :focus-within)[data-side='left'] .tab {
-		transform: translateX(calc(var(--tuck) + var(--peek) - 100%));
+	.edge:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-side='left'] .tab {
+		transform: translateX(calc((var(--tuck) + var(--peek) - 100%) * (1 - var(--pull))));
 	}
-	.edge:not(.shown, :hover, :focus-within)[data-side='top'] .tab {
-		transform: translateY(calc(var(--tuck) + var(--peek) - 100%));
+	.edge:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-side='top'] .tab {
+		transform: translateY(calc((var(--tuck) + var(--peek) - 100%) * (1 - var(--pull))));
 	}
-	.edge:not(.shown, :hover, :focus-within)[data-side='bottom'] .tab {
-		transform: translateY(calc(100% - var(--tuck) - var(--peek)));
+	.edge:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-side='bottom'] .tab {
+		transform: translateY(calc((100% - var(--tuck) - var(--peek)) * (1 - var(--pull))));
 	}
 
 	.corner {
@@ -285,28 +424,28 @@
 		margin: var(--sp-3);
 		border-radius: var(--r-pill);
 	}
-	.corner:not(.shown, :hover, :focus-within)[data-corner='top-left'] .tab {
+	.corner:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-corner='top-left'] .tab {
 		transform: translate(
-			calc(var(--reach) - 100% - var(--sp-3)),
-			calc(var(--reach) - 100% - var(--sp-3))
+			calc((var(--reach) - 100% - var(--sp-3)) * (1 - var(--pull))),
+			calc((var(--reach) - 100% - var(--sp-3)) * (1 - var(--pull)))
 		);
 	}
-	.corner:not(.shown, :hover, :focus-within)[data-corner='top-right'] .tab {
+	.corner:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-corner='top-right'] .tab {
 		transform: translate(
-			calc(100% + var(--sp-3) - var(--reach)),
-			calc(var(--reach) - 100% - var(--sp-3))
+			calc((100% + var(--sp-3) - var(--reach)) * (1 - var(--pull))),
+			calc((var(--reach) - 100% - var(--sp-3)) * (1 - var(--pull)))
 		);
 	}
-	.corner:not(.shown, :hover, :focus-within)[data-corner='bottom-left'] .tab {
+	.corner:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-corner='bottom-left'] .tab {
 		transform: translate(
-			calc(var(--reach) - 100% - var(--sp-3)),
-			calc(100% + var(--sp-3) - var(--reach))
+			calc((var(--reach) - 100% - var(--sp-3)) * (1 - var(--pull))),
+			calc((100% + var(--sp-3) - var(--reach)) * (1 - var(--pull)))
 		);
 	}
-	.corner:not(.shown, :hover, :focus-within)[data-corner='bottom-right'] .tab {
+	.corner:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-corner='bottom-right'] .tab {
 		transform: translate(
-			calc(100% + var(--sp-3) - var(--reach)),
-			calc(100% + var(--sp-3) - var(--reach))
+			calc((100% + var(--sp-3) - var(--reach)) * (1 - var(--pull))),
+			calc((100% + var(--sp-3) - var(--reach)) * (1 - var(--pull)))
 		);
 	}
 </style>

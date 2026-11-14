@@ -135,3 +135,36 @@ export function panelOrigin(
 		top: within(top, panel.height, viewport.height, margin),
 	};
 }
+
+export function inward(launcher: Resolved): { x: number; y: number } {
+	if (launcher.form === 'floating') return { x: 0, y: 0 };
+	if (launcher.form === 'edge') {
+		const { side } = launcher;
+		return {
+			x: side === 'left' ? 1 : side === 'right' ? -1 : 0,
+			y: side === 'top' ? 1 : side === 'bottom' ? -1 : 0,
+		};
+	}
+	const [v, h] = split(launcher.corner);
+	return { x: (h === 'start' ? 1 : -1) * Math.SQRT1_2, y: (v === 'start' ? 1 : -1) * Math.SQRT1_2 };
+}
+
+export function distance(box: Box, x: number, y: number): number {
+	const dx = Math.max(box.left - x, 0, x - box.right);
+	const dy = Math.max(box.top - y, 0, y - box.bottom);
+	return Math.hypot(dx, dy);
+}
+
+export const approach = (gap: number, radius: number, most = 0.5) =>
+	gap >= radius ? 0 : most * (1 - Math.max(0, gap) / radius);
+
+export function dragPull(
+	start: number,
+	dx: number,
+	dy: number,
+	dir: { x: number; y: number },
+	travel: number,
+): number {
+	const along = dx * dir.x + dy * dir.y;
+	return Math.min(1, Math.max(0, start + along / Math.max(1, travel)));
+}
