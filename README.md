@@ -87,8 +87,10 @@ the launcher, on the same side, and stays inside the viewport.
 `bottom-right`. `look` is `pill` (default), `icon` or `button` (the primary colour).
 
 **Edge tab** is pushed off-screen against an edge, so only a thin strip with an accent grip shows.
-It slides in on hover or keyboard focus. On touch screens, the first tap slides it in and the second
-opens the panel.
+It slides part way out as the mouse comes near, fully on hover or keyboard focus, and it reacts to
+an invisible strip along the edge that is wider than what is drawn. On touch screens, swipe inward
+in that strip to pull it out and back toward the edge to tuck it away; a tap also works, the first
+slides it in and the second opens the panel.
 
 ```svelte
 <Hmm … launcher={{ form: 'edge', side: 'right', align: 'end' }} />
@@ -97,7 +99,8 @@ opens the panel.
 `side` is `top`, `right`, `bottom` or `left`; `align` is `start`, `center` (default) or `end`
 along that edge.
 
-**Corner bubble** is tucked into a corner and slides out diagonally, with its label.
+**Corner bubble** is tucked into a corner and slides out diagonally, with its label. It peeks out
+as the mouse comes near and can be swiped out of the corner like the edge tab.
 
 ```svelte
 <Hmm … launcher={{ form: 'corner', corner: 'bottom-right' }} />
@@ -152,7 +155,9 @@ Colours, spacing, radii and type come from the tsumikit tokens in scope where `H
 a `data-theme` switch or a token override on an ancestor applies to the panel too. The panel sits
 at `--z-toast`; set `--hmm-z-index` on an ancestor to move it. `--hmm-offset-x` and
 `--hmm-offset-y` shift the launcher, for example above a mobile bottom bar, and `--hmm-peek` sets
-how much of an edge tab shows at rest (`--sp-2` by default). `[data-hmm-launcher]` and
+how much of an edge tab shows at rest (`--sp-2` by default). `--hmm-zone` sets how far the
+invisible hit area of a tucked launcher reaches in from the edge (`--sp-8` by default).
+`[data-hmm-launcher]` and
 `[data-hmm-trigger]` are there for one-off overrides.
 
 ## What is sent

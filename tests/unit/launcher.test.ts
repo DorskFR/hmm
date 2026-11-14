@@ -2,7 +2,11 @@ import { expect, test } from '@playwright/test';
 import {
 	ALIGNS,
 	ANCHORS,
+	approach,
 	CORNERS,
+	distance,
+	dragPull,
+	inward,
 	type Launcher,
 	panelOrigin,
 	placementFor,
@@ -108,4 +112,32 @@ test('a panel opened without a launcher goes to the requested corner', () => {
 		left: 684,
 		top: 16,
 	});
+});
+
+test('tucked launchers slide toward the middle of the screen', () => {
+	expect(inward(resolve({ form: 'edge', side: 'right' }))).toEqual({ x: -1, y: 0 });
+	expect(inward(resolve({ form: 'edge', side: 'top' }))).toEqual({ x: 0, y: 1 });
+	const d = inward(resolve({ form: 'corner', corner: 'bottom-left' }));
+	expect(d.x).toBeCloseTo(Math.SQRT1_2);
+	expect(d.y).toBeCloseTo(-Math.SQRT1_2);
+});
+
+test('approaching a launcher pulls it out up to half way', () => {
+	const tab = box(900, 400, 100, 40);
+	expect(distance(tab, 950, 420)).toBe(0);
+	expect(distance(tab, 860, 420)).toBe(40);
+	expect(distance(tab, 897, 397)).toBeCloseTo(Math.hypot(3, 3));
+	expect(approach(0, 96)).toBe(0.5);
+	expect(approach(48, 96)).toBe(0.25);
+	expect(approach(96, 96)).toBe(0);
+	expect(approach(200, 96)).toBe(0);
+});
+
+test('a swipe drags the tab along its slide and clamps', () => {
+	const left = { x: -1, y: 0 };
+	expect(dragPull(0, -50, 0, left, 100)).toBe(0.5);
+	expect(dragPull(0, -50, 30, left, 100)).toBe(0.5);
+	expect(dragPull(0, 40, 0, left, 100)).toBe(0);
+	expect(dragPull(1, 30, 0, left, 100)).toBeCloseTo(0.7);
+	expect(dragPull(0, -400, 0, left, 100)).toBe(1);
 });

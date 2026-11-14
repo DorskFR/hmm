@@ -56,6 +56,42 @@ test('an edge tab peeks, slides in on hover and opens the panel beside it', asyn
 	await expect(tab).toBeFocused();
 });
 
+test('an edge tab slides out as the mouse comes close and opens from its wider zone', async ({
+	page,
+}) => {
+	await open(page, { form: 'edge', side: 'right', align: 'center' });
+	const tab = part(page, 'launcher');
+	const r = await rect(tab);
+	const y = (r.top + r.bottom) / 2;
+	const { width } = viewport(page);
+	await page.mouse.move(width - 400, y);
+	await expect.poll(() => visibleWidth(page, tab)).toBeLessThan(12);
+
+	await page.mouse.move(width - (r.right - r.left) - 20, y);
+	await expect.poll(() => visibleWidth(page, tab)).toBeGreaterThan(20);
+	expect(await visibleWidth(page, tab)).toBeLessThan(60);
+
+	const zone = await rect(part(page, 'launcher-zone'));
+	expect(zone.right - zone.left).toBeGreaterThan(24);
+	expect(zone.bottom - zone.top).toBeGreaterThan(r.bottom - r.top);
+	await page.mouse.click(zone.right - 2, zone.top + 2);
+	await expect(part(page, 'panel')).toBeVisible();
+});
+
+test('a corner bubble peeks out as the mouse comes close', async ({ page }) => {
+	await open(page, { form: 'corner', corner: 'bottom-right' });
+	const bubble = part(page, 'launcher');
+	const { width, height } = viewport(page);
+	const peek = async () => {
+		const b = await rect(bubble);
+		return Math.min(width, b.right) - b.left;
+	};
+	await page.mouse.move(width - 400, height - 400);
+	const rest = await peek();
+	await page.mouse.move(width - 90, height - 40);
+	await expect.poll(peek).toBeGreaterThan(rest + 10);
+});
+
 test('keyboard focus reveals an edge tab', async ({ page }) => {
 	await open(page, { form: 'edge', side: 'left', align: 'start' });
 	const tab = part(page, 'launcher');
@@ -154,5 +190,48 @@ test.describe('on a touch screen', () => {
 		const s = await rect(tab);
 		await page.touchscreen.tap((s.left + s.right) / 2, (s.top + s.bottom) / 2);
 		await expect(part(page, 'panel')).toBeVisible();
+	});
+
+	const swipe = async (page: Page, from: [number, number], to: [number, number]) => {
+		const cdp = await page.context().newCDPSession(page);
+		const point = ([x, y]: [number, number]) => [{ x, y }];
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: point(from) });
+		for (let i = 1; i <= 8; i++) {
+			const at: [number, number] = [
+				from[0] + ((to[0] - from[0]) * i) / 8,
+				from[1] + ((to[1] - from[1]) * i) / 8,
+			];
+			await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: point(at) });
+		}
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	};
+
+	test('a swipe in the edge zone slides the tab out and a swipe back tucks it', async ({
+		page,
+	}) => {
+		await open(page, { form: 'edge', side: 'right', align: 'end' });
+		const tab = part(page, 'launcher');
+		const zone = await rect(part(page, 'launcher-zone'));
+		const { width } = viewport(page);
+		const y = zone.top + 4;
+
+		await swipe(page, [width - 6, y], [width - 120, y]);
+		await expect.poll(() => visibleWidth(page, tab)).toBeGreaterThan(60);
+		await expect(part(page, 'panel')).toHaveCount(0);
+
+		const s = await rect(tab);
+		const mid = (s.top + s.bottom) / 2;
+		await swipe(page, [s.left + 10, mid], [width - 2, mid]);
+		await expect.poll(() => visibleWidth(page, tab)).toBeLessThan(12);
+		await expect(part(page, 'panel')).toHaveCount(0);
+	});
+
+	test('a short swipe springs back', async ({ page }) => {
+		await open(page, { form: 'edge', side: 'right', align: 'end' });
+		const tab = part(page, 'launcher');
+		const zone = await rect(part(page, 'launcher-zone'));
+		const { width } = viewport(page);
+		await swipe(page, [width - 6, zone.top + 4], [width - 26, zone.top + 4]);
+		await expect.poll(() => visibleWidth(page, tab)).toBeLessThan(12);
 	});
 });
