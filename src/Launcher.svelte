@@ -31,6 +31,8 @@
 	let pointer = $state('');
 	let near = $state(0);
 	let drag = $state<number | null>(null);
+	let focused = $state(false);
+	let keyboard = false;
 	let tab = $state<HTMLButtonElement>();
 	let swipe: { id: number; x: number; y: number; from: number } | null = null;
 	let swallow = false;
@@ -108,6 +110,21 @@
 	});
 
 	$effect(() => {
+		const key = () => (keyboard = true);
+		const point = () => (keyboard = false);
+		document.addEventListener('keydown', key, true);
+		document.addEventListener('pointerdown', point, true);
+		return () => {
+			document.removeEventListener('keydown', key, true);
+			document.removeEventListener('pointerdown', point, true);
+		};
+	});
+
+	function onfocusout(event: FocusEvent) {
+		if (!element?.contains(event.relatedTarget as Node)) focused = false;
+	}
+
+	$effect(() => {
 		if (!revealed) return;
 		const away = (event: PointerEvent) => {
 			if (!element?.contains(event.target as Node)) revealed = false;
@@ -129,12 +146,14 @@
 <div
 	bind:this={element}
 	class="launcher {launcher.form}"
-	class:shown={revealed || active}
+	class:shown={revealed || active || focused}
 	class:dragging={drag !== null}
 	class:touch={pointer === 'touch'}
 	class:hidden
 	style:--pull={drag ?? near}
 	inert={hidden}
+	onfocusin={() => (focused = keyboard)}
+	{onfocusout}
 	data-hmm-launcher={launcher.form}
 	data-anchor={launcher.form === 'floating' ? launcher.anchor : undefined}
 	data-side={launcher.form === 'edge' ? launcher.side : undefined}
@@ -310,8 +329,7 @@
 		right: 0;
 	}
 	.shown .tab,
-	.launcher:hover .tab,
-	.launcher:focus-within .tab {
+	.launcher:hover .tab {
 		box-shadow: var(--shadow-lg);
 	}
 	.grip {
@@ -392,16 +410,16 @@
 	.edge[data-side='bottom'] .grip {
 		top: var(--sp-1);
 	}
-	.edge:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-side='right'] .tab {
+	.edge:is(:not(.shown, :hover:not(.touch)), .dragging)[data-side='right'] .tab {
 		transform: translateX(calc((100% - var(--tuck) - var(--peek)) * (1 - var(--pull))));
 	}
-	.edge:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-side='left'] .tab {
+	.edge:is(:not(.shown, :hover:not(.touch)), .dragging)[data-side='left'] .tab {
 		transform: translateX(calc((var(--tuck) + var(--peek) - 100%) * (1 - var(--pull))));
 	}
-	.edge:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-side='top'] .tab {
+	.edge:is(:not(.shown, :hover:not(.touch)), .dragging)[data-side='top'] .tab {
 		transform: translateY(calc((var(--tuck) + var(--peek) - 100%) * (1 - var(--pull))));
 	}
-	.edge:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-side='bottom'] .tab {
+	.edge:is(:not(.shown, :hover:not(.touch)), .dragging)[data-side='bottom'] .tab {
 		transform: translateY(calc((100% - var(--tuck) - var(--peek)) * (1 - var(--pull))));
 	}
 
@@ -424,25 +442,25 @@
 		margin: var(--sp-3);
 		border-radius: var(--r-pill);
 	}
-	.corner:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-corner='top-left'] .tab {
+	.corner:is(:not(.shown, :hover:not(.touch)), .dragging)[data-corner='top-left'] .tab {
 		transform: translate(
 			calc((var(--reach) - 100% - var(--sp-3)) * (1 - var(--pull))),
 			calc((var(--reach) - 100% - var(--sp-3)) * (1 - var(--pull)))
 		);
 	}
-	.corner:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-corner='top-right'] .tab {
+	.corner:is(:not(.shown, :hover:not(.touch)), .dragging)[data-corner='top-right'] .tab {
 		transform: translate(
 			calc((100% + var(--sp-3) - var(--reach)) * (1 - var(--pull))),
 			calc((var(--reach) - 100% - var(--sp-3)) * (1 - var(--pull)))
 		);
 	}
-	.corner:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-corner='bottom-left'] .tab {
+	.corner:is(:not(.shown, :hover:not(.touch)), .dragging)[data-corner='bottom-left'] .tab {
 		transform: translate(
 			calc((var(--reach) - 100% - var(--sp-3)) * (1 - var(--pull))),
 			calc((100% + var(--sp-3) - var(--reach)) * (1 - var(--pull)))
 		);
 	}
-	.corner:is(:not(.shown, :hover:not(.touch), :focus-within), .dragging)[data-corner='bottom-right'] .tab {
+	.corner:is(:not(.shown, :hover:not(.touch)), .dragging)[data-corner='bottom-right'] .tab {
 		transform: translate(
 			calc((100% + var(--sp-3) - var(--reach)) * (1 - var(--pull))),
 			calc((100% + var(--sp-3) - var(--reach)) * (1 - var(--pull)))

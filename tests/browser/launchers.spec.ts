@@ -54,6 +54,22 @@ test('an edge tab peeks, slides in on hover and opens the panel beside it', asyn
 	await page.keyboard.press('Escape');
 	await expect(panel).toHaveCount(0);
 	await expect(tab).toBeFocused();
+	await expect.poll(() => visibleWidth(page, tab)).toBeGreaterThan(60);
+});
+
+test('an edge tab tucks away again once the panel is closed with the mouse', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'right', align: 'end' });
+	const tab = part(page, 'launcher');
+	await tab.hover({ position: { x: 3, y: 10 }, force: true });
+	await expect.poll(() => visibleWidth(page, tab)).toBeGreaterThan(60);
+	await tab.click();
+	await expect(part(page, 'panel')).toBeVisible();
+
+	await part(page, 'close').click();
+	await expect(part(page, 'panel')).toHaveCount(0);
+	await expect(tab).toBeFocused();
+	await page.mouse.move(10, 10);
+	await expect.poll(() => visibleWidth(page, tab)).toBeLessThan(12);
 });
 
 test('an edge tab slides out as the mouse comes close and opens from its wider zone', async ({
@@ -96,8 +112,19 @@ test('keyboard focus reveals an edge tab', async ({ page }) => {
 	await open(page, { form: 'edge', side: 'left', align: 'start' });
 	const tab = part(page, 'launcher');
 	await expect.poll(async () => (await rect(tab)).right).toBeLessThan(12);
-	await tab.focus();
+	for (let i = 0; i < 10 && !(await tab.evaluate((el) => el === document.activeElement)); i++)
+		await page.keyboard.press('Tab');
+	await expect(tab).toBeFocused();
 	await expect.poll(async () => (await rect(tab)).right).toBeGreaterThan(60);
+});
+
+test('focus moved by a script does not reveal an edge tab', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'left', align: 'start' });
+	const tab = part(page, 'launcher');
+	await page.mouse.click(300, 300);
+	await tab.focus();
+	await expect(tab).toBeFocused();
+	await expect.poll(async () => (await rect(tab)).right).toBeLessThan(12);
 });
 
 test('a top tab opens the panel below it', async ({ page }) => {
