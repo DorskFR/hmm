@@ -1,7 +1,7 @@
 import tokens from 'hmm:tokens';
 import { init as mountPanel, type Options } from '../src/index.ts';
 
-export { hmm, LABELS, VERSION } from '../src/index.ts';
+export { hmm, LABELS, LABELS_FR, VERSION } from '../src/index.ts';
 
 function injectTokens(): void {
 	if (document.querySelector('style[data-hmm-tokens]')) return;

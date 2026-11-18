@@ -19,7 +19,7 @@
 	} from '@dorsk/tsumikit';
 	import { onMount, tick, untrack } from 'svelte';
 	import { register } from './controller.svelte.ts';
-	import { clamp, type Options, readable, shortUrl, storageOf, transportOf, uid } from './core.ts';
+	import { clamp, type Options, readable, setupOf, shortUrl, storageOf, uid } from './core.ts';
 	import { type Draft, emptyDraft, isEmpty, loadDraft, saveDraft } from './draft.ts';
 	import {
 		type Attachment,
@@ -37,7 +37,7 @@
 	import { elementAt } from './picker.ts';
 	import { redactEnvelope } from './redact.ts';
 	import { capture, type Shot } from './shot.ts';
-	import { enqueue, flush, isRetryable } from './transport.ts';
+	import { enqueue, flush, isRetryable, SendError } from './transport.ts';
 	import { VERSION } from './version.ts';
 
 	let {
@@ -55,13 +55,14 @@
 	}: Options & { open?: boolean } = $props();
 
 	const L = $derived<Labels>({ ...LABELS, ...labels });
-	const deliver = $derived(transportOf({ projectKey, endpoint, transport }));
-	untrack(() => deliver);
+	const setup = $derived(setupOf({ projectKey, endpoint, transport }));
+	const deliver = $derived(setup.transport);
+	const enabled = $derived(deliver !== null);
 	const draftKey = $derived(`hmm:draft:${projectKey}`);
 	const outboxKey = $derived(`hmm:outbox:${projectKey}`);
 	const resolved = $derived(resolveLauncher(launcher, position));
 
-	let host: HTMLElement | undefined;
+	let host = $state<HTMLElement>();
 	let launcherEl = $state<HTMLElement>();
 	let panelEl = $state<HTMLElement>();
 	let at = $state<Corner | null>(null);
@@ -255,19 +256,29 @@
 		view = 'done';
 	}
 
+	function rejected(err: unknown) {
+		const reason = err instanceof SendError ? (err.detail ?? err.message) : String(err);
+		const status = err instanceof SendError && err.status ? ` (${err.status})` : '';
+		console.error(
+			`[hmm] the report for project "${projectKey}" from ${location.origin} was rejected${status}: ${reason}`,
+		);
+	}
+
 	async function send() {
 		const envelope = pending;
-		if (!envelope || busy) return;
+		if (!envelope || busy || !deliver) return;
 		busy = 'send';
 		error = '';
 		try {
 			await deliver(envelope);
 		} catch (err) {
-			console.warn('[hmm] sending failed', err);
-			if (isRetryable(err) && local && enqueue(local, outboxKey, envelope)) finish(false);
+			const retryable = isRetryable(err);
+			if (retryable) console.warn('[hmm] sending failed', err);
+			else rejected(err);
+			if (retryable && local && enqueue(local, outboxKey, envelope)) finish(false);
 			else {
 				busy = '';
-				error = L.failed;
+				error = retryable ? L.failed : L.rejected;
 			}
 			return;
 		}
@@ -276,6 +287,7 @@
 	}
 
 	export function show(corner?: Corner) {
+		if (!enabled) return;
 		at = corner ?? null;
 		open = true;
 	}
@@ -355,6 +367,26 @@
 	});
 
 	$effect(() => {
+		if (setup.error) console.error(`[hmm] the panel is not shown: ${setup.error.replace(/^hmm: /, '')}`);
+	});
+
+	$effect(() => {
+		if (!enabled || !ready) return;
+		return untrack(() => {
+			const flushOutbox = () => {
+				if (local && deliver) void flush(local, outboxKey, deliver).catch(() => {});
+			};
+			const unregister = register({ show, hide, isOpen });
+			addEventListener('online', flushOutbox);
+			flushOutbox();
+			return () => {
+				removeEventListener('online', flushOutbox);
+				unregister();
+			};
+		});
+	});
+
+	$effect(() => {
 		if (ready) saveDraft(session, draftKey, $state.snapshot(draft) as Draft);
 	});
 
@@ -363,25 +395,17 @@
 		local = storageOf(() => localStorage);
 		draft = loadDraft(session, draftKey);
 		ready = true;
-		const unregister = register({ show, hide, isOpen });
 
 		const schedulePins = () => {
 			cancelAnimationFrame(frame);
 			frame = requestAnimationFrame(placePins);
 		};
-		const flushOutbox = () => {
-			if (local) void flush(local, outboxKey, deliver).catch(() => {});
-		};
 		addEventListener('scroll', schedulePins, { capture: true, passive: true });
 		addEventListener('resize', schedulePins);
-		addEventListener('online', flushOutbox);
-		flushOutbox();
 		return () => {
 			cancelAnimationFrame(frame);
 			removeEventListener('scroll', schedulePins, { capture: true });
 			removeEventListener('resize', schedulePins);
-			removeEventListener('online', flushOutbox);
-			unregister();
 		};
 	});
 </script>
@@ -404,228 +428,230 @@
 	<Text tone="muted" size="sm" truncate grow data-id="item-label">{titleOf(item)}</Text>
 {/snippet}
 
-<div
-	bind:this={host}
-	data-hmm
-	class="hmm"
-	role="presentation"
-	onkeydown={onKey}
->
-	{#if resolved}
-		<Launcher
-			launcher={resolved}
-			label={L.launcher}
-			title={L.title}
-			hidden={picking || (open && resolved.form === 'floating')}
-			active={open}
-			content={launcherContent}
-			onopen={() => (open ? hide() : show())}
-			bind:element={launcherEl}
-		/>
-	{/if}
+{#if enabled}
+	<div
+		bind:this={host}
+		data-hmm
+		class="hmm"
+		role="presentation"
+		onkeydown={onKey}
+	>
+		{#if resolved}
+			<Launcher
+				launcher={resolved}
+				label={L.launcher}
+				title={L.title}
+				hidden={picking || (open && resolved.form === 'floating')}
+				active={open}
+				content={launcherContent}
+				onopen={() => (open ? hide() : show())}
+				bind:element={launcherEl}
+			/>
+		{/if}
 
-	{#if open && !picking}
-		<div
-			class="panel"
-			class:placed={spot !== null}
-			bind:this={panelEl}
-			style:left={spot ? `${spot.left}px` : undefined}
-			style:top={spot ? `${spot.top}px` : undefined}
-		>
-			<Card
-				as="section"
-				padding="none"
-				surface="raised"
-				role="dialog"
-				aria-labelledby={ids.title}
-				data-id="panel"
-				style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+		{#if open && !picking}
+			<div
+				class="panel"
+				class:placed={spot !== null}
+				bind:this={panelEl}
+				style:left={spot ? `${spot.left}px` : undefined}
+				style:top={spot ? `${spot.top}px` : undefined}
 			>
-				<header class="head">
-					<Stack gap="var(--sp-1)">
-						<Heading level={2} size="lg" id={ids.title}>{L.title}</Heading>
-						{#if view !== 'done'}
-							<Text as="p" tone="muted" data-id="subtitle">
-								{view === 'review' ? L.reviewIntro : L.subtitle}
-							</Text>
-						{/if}
-					</Stack>
-					<IconButton icon="x" label={L.close} data-id="close" onclick={hide} />
-				</header>
+				<Card
+					as="section"
+					padding="none"
+					surface="raised"
+					role="dialog"
+					aria-labelledby={ids.title}
+					data-id="panel"
+					style="display: flex; flex-direction: column; flex: 1; min-height: 0"
+				>
+					<header class="head">
+						<Stack gap="var(--sp-1)">
+							<Heading level={2} size="lg" id={ids.title}>{L.title}</Heading>
+							{#if view !== 'done'}
+								<Text as="p" tone="muted" data-id="subtitle">
+									{view === 'review' ? L.reviewIntro : L.subtitle}
+								</Text>
+							{/if}
+						</Stack>
+						<IconButton icon="x" label={L.close} data-id="close" onclick={hide} />
+					</header>
 
-				{#if view === 'review' && pending}
-					<div class="body" data-id="review-body">
-						{#if pending.comment}
-							<Stack gap="var(--sp-2)">
-								<Text weight="medium">{L.yourFeedback}</Text>
-								<div class="said" data-id="said">
-									<Text as="p" wrap="anywhere">{pending.comment}</Text>
-								</div>
-							</Stack>
-						{/if}
-						{#each pending.items as item, i (item.id)}
-							{@const image = imageOf(pending.attachments, item)}
-							<Card padding="sm" gap="var(--sp-2)">
-								<Cluster wrap={false}>{@render itemHead(item, i + 1)}</Cluster>
-								{#if item.comment}<Text as="p" wrap="anywhere">{item.comment}</Text>{/if}
-								{#if image}<img class="shot" src={image} alt={titleOf(item)} />{/if}
-							</Card>
-						{/each}
-						<KeyValue {rows} />
-						<Disclosure size="compact" data-id="raw">
-							{#snippet header()}{L.technical}{/snippet}
-							<CodeBlock code={readable(pending)} lang="json" wrap copy={false} maxHeight="12rem" />
-						</Disclosure>
-						{#if error}<Callout tone="danger" data-id="error">{error}</Callout>{/if}
-					</div>
-					<footer class="foot end">
-						<Button
-							variant="ghost"
-							data-id="back"
-							disabled={!!busy}
-							onclick={() => {
-								view = 'edit';
-								error = '';
-							}}
-						>
-							{L.back}
-						</Button>
-						<Button variant="primary" data-id="send" loading={busy === 'send'} onclick={send}>
-							{L.send}
-						</Button>
-					</footer>
-				{:else if view === 'done'}
-					<div class="body" data-id="result">
-						<EmptyState
-							icon={delivered ? 'check-circle' : 'alert-circle'}
-							tone={delivered ? 'ok' : 'warn'}
-							style="--empty-tone: var(--{delivered ? 'ok' : 'warn'})"
-							title={delivered ? L.sentTitle : L.queuedTitle}
-						>
-							{#snippet description()}<span data-id="message">{message}</span>{/snippet}
-						</EmptyState>
-					</div>
-					<footer class="foot end">
-						<Button variant="primary" data-id="done" onclick={hide}>{L.done}</Button>
-					</footer>
-				{:else}
-					<div class="body">
-						<Field label={L.details} for={ids.comment}>
-							<Textarea
-								block
-								rows={4}
-								maxlength={4000}
-								id={ids.comment}
-								data-id="comment"
-								placeholder={L.commentPlaceholder}
-								bind:value={draft.comment}
-							/>
-						</Field>
-						{#each draft.items as item, i (item.id)}
-							{@const image = imageOf(draft.attachments, item)}
-							<Card padding="sm" gap="var(--sp-2)" data-id="item">
-								<Cluster wrap={false}>
-									{@render itemHead(item, i + 1)}
-									<IconButton
-										icon="x"
-										box="sm"
-										label={L.remove}
-										data-id="remove"
-										onclick={() => removeItem(item)}
-									/>
-								</Cluster>
-								{#if image}
-									<Cluster wrap={false} align="start">
-										<img class="shot" src={image} alt={titleOf(item)} />
-										{#if item.type === 'element'}
-											<IconButton
-												icon="trash"
-												box="sm"
-												label={L.removeImage}
-												data-id="remove-image"
-												onclick={() => removeImage(item)}
-											/>
-										{/if}
-									</Cluster>
-								{/if}
+					{#if view === 'review' && pending}
+						<div class="body" data-id="review-body">
+							{#if pending.comment}
+								<Stack gap="var(--sp-2)">
+									<Text weight="medium">{L.yourFeedback}</Text>
+									<div class="said" data-id="said">
+										<Text as="p" wrap="anywhere">{pending.comment}</Text>
+									</div>
+								</Stack>
+							{/if}
+							{#each pending.items as item, i (item.id)}
+								{@const image = imageOf(pending.attachments, item)}
+								<Card padding="sm" gap="var(--sp-2)">
+									<Cluster wrap={false}>{@render itemHead(item, i + 1)}</Cluster>
+									{#if item.comment}<Text as="p" wrap="anywhere">{item.comment}</Text>{/if}
+									{#if image}<img class="shot" src={image} alt={titleOf(item)} />{/if}
+								</Card>
+							{/each}
+							<KeyValue {rows} />
+							<Disclosure size="compact" data-id="raw">
+								{#snippet header()}{L.technical}{/snippet}
+								<CodeBlock code={readable(pending)} lang="json" wrap copy={false} maxHeight="12rem" />
+							</Disclosure>
+							{#if error}<Callout tone="danger" data-id="error">{error}</Callout>{/if}
+						</div>
+						<footer class="foot end">
+							<Button
+								variant="ghost"
+								data-id="back"
+								disabled={!!busy}
+								onclick={() => {
+									view = 'edit';
+									error = '';
+								}}
+							>
+								{L.back}
+							</Button>
+							<Button variant="primary" data-id="send" loading={busy === 'send'} onclick={send}>
+								{L.send}
+							</Button>
+						</footer>
+					{:else if view === 'done'}
+						<div class="body" data-id="result">
+							<EmptyState
+								icon={delivered ? 'check-circle' : 'alert-circle'}
+								tone={delivered ? 'ok' : 'warn'}
+								style="--empty-tone: var(--{delivered ? 'ok' : 'warn'})"
+								title={delivered ? L.sentTitle : L.queuedTitle}
+							>
+								{#snippet description()}<span data-id="message">{message}</span>{/snippet}
+							</EmptyState>
+						</div>
+						<footer class="foot end">
+							<Button variant="primary" data-id="done" onclick={hide}>{L.done}</Button>
+						</footer>
+					{:else}
+						<div class="body">
+							<Field label={L.details} for={ids.comment}>
 								<Textarea
 									block
-									rows={2}
+									rows={4}
 									maxlength={4000}
-									data-id="item-comment"
-									data-item={item.id}
-									aria-label="{L.comment} {i + 1}"
-									placeholder={L.itemPlaceholder}
-									bind:value={item.comment}
+									id={ids.comment}
+									data-id="comment"
+									placeholder={L.commentPlaceholder}
+									bind:value={draft.comment}
 								/>
-							</Card>
-						{/each}
-						<Stack gap="var(--sp-2)" role="group" aria-labelledby={ids.attach}>
-							<Text tone="muted" size="sm" id={ids.attach}>{L.attach}</Text>
-							<Cluster>
-								<Button data-id="pick" glyph={pointerGlyph} disabled={!!busy} onclick={beginPick}>
-									{L.pick}
-								</Button>
-								<Button
-									data-id="shot"
-									glyph={cameraGlyph}
-									loading={busy === 'capture'}
-									onclick={addShot}
-								>
-									{L.shot}
-								</Button>
-							</Cluster>
-						</Stack>
-						{#if busy === 'capture'}
-							<Text as="p" tone="muted" size="sm" role="status">{L.capturing}</Text>
-						{/if}
-						{#if error}<Callout tone="danger" data-id="error">{error}</Callout>{/if}
-					</div>
-					<footer class="foot">
-						<Text tone="muted" size="sm" grow>{L.reviewHint}</Text>
-						<Button
-							variant="ghost"
-							data-id="discard"
-							disabled={!!busy || empty}
-							onclick={() => {
-								draft = emptyDraft();
-								error = '';
-							}}
-						>
-							{L.discard}
-						</Button>
-						<Button variant="primary" data-id="review" disabled={!!busy || empty} onclick={review}>
-							{L.review}
-						</Button>
-					</footer>
-				{/if}
-			</Card>
-		</div>
-	{/if}
-
-	<div aria-hidden="true">
-		{#each pins as pin (pin.n)}
-			<div class="pin" style:transform="translate({pin.x}px, {pin.y}px)">
-				<Badge tone="accent" size="sm" numeric>{pin.n}</Badge>
+							</Field>
+							{#each draft.items as item, i (item.id)}
+								{@const image = imageOf(draft.attachments, item)}
+								<Card padding="sm" gap="var(--sp-2)" data-id="item">
+									<Cluster wrap={false}>
+										{@render itemHead(item, i + 1)}
+										<IconButton
+											icon="x"
+											box="sm"
+											label={L.remove}
+											data-id="remove"
+											onclick={() => removeItem(item)}
+										/>
+									</Cluster>
+									{#if image}
+										<Cluster wrap={false} align="start">
+											<img class="shot" src={image} alt={titleOf(item)} />
+											{#if item.type === 'element'}
+												<IconButton
+													icon="trash"
+													box="sm"
+													label={L.removeImage}
+													data-id="remove-image"
+													onclick={() => removeImage(item)}
+												/>
+											{/if}
+										</Cluster>
+									{/if}
+									<Textarea
+										block
+										rows={2}
+										maxlength={4000}
+										data-id="item-comment"
+										data-item={item.id}
+										aria-label="{L.comment} {i + 1}"
+										placeholder={L.itemPlaceholder}
+										bind:value={item.comment}
+									/>
+								</Card>
+							{/each}
+							<Stack gap="var(--sp-2)" role="group" aria-labelledby={ids.attach}>
+								<Text tone="muted" size="sm" id={ids.attach}>{L.attach}</Text>
+								<Cluster>
+									<Button data-id="pick" glyph={pointerGlyph} disabled={!!busy} onclick={beginPick}>
+										{L.pick}
+									</Button>
+									<Button
+										data-id="shot"
+										glyph={cameraGlyph}
+										loading={busy === 'capture'}
+										onclick={addShot}
+									>
+										{L.shot}
+									</Button>
+								</Cluster>
+							</Stack>
+							{#if busy === 'capture'}
+								<Text as="p" tone="muted" size="sm" role="status">{L.capturing}</Text>
+							{/if}
+							{#if error}<Callout tone="danger" data-id="error">{error}</Callout>{/if}
+						</div>
+						<footer class="foot">
+							<Text tone="muted" size="sm" grow>{L.reviewHint}</Text>
+							<Button
+								variant="ghost"
+								data-id="discard"
+								disabled={!!busy || empty}
+								onclick={() => {
+									draft = emptyDraft();
+									error = '';
+								}}
+							>
+								{L.discard}
+							</Button>
+							<Button variant="primary" data-id="review" disabled={!!busy || empty} onclick={review}>
+								{L.review}
+							</Button>
+						</footer>
+					{/if}
+				</Card>
 			</div>
-		{/each}
-	</div>
-
-	{#if picking}
-		<div class="glass" role="presentation" onmousemove={onMove} onclick={onPick}></div>
-		{#if outline}
-			<div
-				class="outline"
-				style:transform="translate({outline.left}px, {outline.top}px)"
-				style:width="{outline.width}px"
-				style:height="{outline.height}px"
-			></div>
 		{/if}
-		<div class="hint" role="status">
-			<Card padding="sm" surface="raised">{L.pickHint}</Card>
+
+		<div aria-hidden="true">
+			{#each pins as pin (pin.n)}
+				<div class="pin" style:transform="translate({pin.x}px, {pin.y}px)">
+					<Badge tone="accent" size="sm" numeric>{pin.n}</Badge>
+				</div>
+			{/each}
 		</div>
-	{/if}
-</div>
+
+		{#if picking}
+			<div class="glass" role="presentation" onmousemove={onMove} onclick={onPick}></div>
+			{#if outline}
+				<div
+					class="outline"
+					style:transform="translate({outline.left}px, {outline.top}px)"
+					style:width="{outline.width}px"
+					style:height="{outline.height}px"
+				></div>
+			{/if}
+			<div class="hint" role="status">
+				<Card padding="sm" surface="raised">{L.pickHint}</Card>
+			</div>
+		{/if}
+	</div>
+{/if}
 
 <style>
 	.hmm {

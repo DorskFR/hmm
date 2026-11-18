@@ -23,7 +23,7 @@ export {
 	type Validation,
 	validateEnvelope,
 } from './envelope.ts';
-export { LABELS, type Labels } from './labels.ts';
+export { LABELS, LABELS_FR, type Labels } from './labels.ts';
 export {
 	ALIGNS,
 	type Align,

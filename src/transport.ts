@@ -4,10 +4,28 @@ export type Transport = (envelope: Envelope) => Promise<void>;
 
 export class SendError extends Error {
 	retryable: boolean;
-	constructor(message: string, retryable: boolean) {
+	status?: number;
+	detail?: string;
+	constructor(
+		message: string,
+		retryable: boolean,
+		info: { status?: number; detail?: string } = {},
+	) {
 		super(message);
 		this.name = 'SendError';
 		this.retryable = retryable;
+		this.status = info.status;
+		this.detail = info.detail;
+	}
+}
+
+async function detailOf(res: Response): Promise<string | undefined> {
+	try {
+		const body: unknown = await res.json();
+		const error = (body as { error?: unknown } | null)?.error;
+		return typeof error === 'string' && error ? error.slice(0, 300) : undefined;
+	} catch {
+		return undefined;
 	}
 }
 
@@ -21,8 +39,13 @@ export function httpTransport(endpoint: string, projectKey: string): Transport {
 			credentials: 'omit',
 		});
 		if (res.ok) return;
-		const retryable = res.status >= 500 || res.status === 408 || res.status === 429;
-		throw new SendError(`the server answered ${res.status}`, retryable);
+		const { status } = res;
+		const retryable = status >= 500 || status === 408 || status === 429;
+		const detail = retryable ? undefined : await detailOf(res);
+		throw new SendError(`the server answered ${status}${detail ? `: ${detail}` : ''}`, retryable, {
+			status,
+			detail,
+		});
 	};
 }
 
