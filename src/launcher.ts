@@ -125,14 +125,26 @@ export function panelOrigin(
 			top: v === 'start' ? margin : viewport.height - panel.height - margin,
 		};
 	}
-	const { from, h, v, mode, flip } = placement;
+	const { from, h, v } = placement;
+	let { mode, flip } = placement;
+	const fits = (start: number, end: number, size: number, span: number) =>
+		flip === 'after' ? end + gap + size <= span - margin : start - gap - size >= margin;
+	const roomier = (start: number, end: number, span: number) =>
+		start + end > span ? 'before' : 'after';
+	if (mode === 'beside' && !fits(from.left, from.right, panel.width, viewport.width)) {
+		mode = 'stack';
+		flip = roomier(from.top, from.bottom, viewport.height);
+	} else if (mode === 'stack' && !fits(from.top, from.bottom, panel.height, viewport.height)) {
+		mode = 'beside';
+		flip = roomier(from.left, from.right, viewport.width);
+	}
 	let left = along(h, from.left, from.right, panel.width);
 	let top = along(v, from.top, from.bottom, panel.height);
 	if (mode === 'beside') left = flip === 'after' ? from.right + gap : from.left - gap - panel.width;
 	if (mode === 'stack') top = flip === 'after' ? from.bottom + gap : from.top - gap - panel.height;
 	return {
-		left: within(left, panel.width, viewport.width, margin),
-		top: within(top, panel.height, viewport.height, margin),
+		left: within(left, panel.width, viewport.width, mode === 'beside' ? gap : margin),
+		top: within(top, panel.height, viewport.height, mode === 'stack' ? gap : margin),
 	};
 }
 

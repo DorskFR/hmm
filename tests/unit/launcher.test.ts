@@ -93,6 +93,47 @@ test('an edge or corner panel sits next to its launcher, inside the viewport', (
 	}
 });
 
+test('on a phone an edge panel that cannot sit beside its tab stacks above or below it', () => {
+	const phone = { width: 390, height: 844 };
+	const sheet = { width: 358, height: 385 };
+	const at = { start: 48, center: 400, end: 752 };
+	for (const side of ['left', 'right'] as const)
+		for (const align of ALIGNS) {
+			const from = box(side === 'left' ? -12 : 302, at[align], 100, 44);
+			const spot = panelOrigin(
+				placementFor(resolve({ form: 'edge', side, align }), from),
+				sheet,
+				phone,
+				16,
+				8,
+			);
+			const placed = box(spot.left, spot.top, sheet.width, sheet.height);
+			expect(overlaps(placed, from), `${side} ${align}`).toBe(false);
+			expect(placed.top).toBeGreaterThanOrEqual(0);
+			expect(placed.bottom).toBeLessThanOrEqual(phone.height);
+		}
+});
+
+test('on a short screen a top or bottom panel sits beside its tab', () => {
+	const short = { width: 1000, height: 360 };
+	for (const side of ['top', 'bottom'] as const)
+		for (const [align, left] of [
+			['start', 48],
+			['end', 832],
+		] as const) {
+			const from = box(left, side === 'top' ? -12 : 320, 120, 52);
+			const spot = panelOrigin(
+				placementFor(resolve({ form: 'edge', side, align }), from),
+				panel,
+				short,
+				16,
+				8,
+			);
+			const placed = box(spot.left, spot.top, panel.width, panel.height);
+			expect(overlaps(placed, from), `${side} ${align}`).toBe(false);
+		}
+});
+
 test('every floating anchor keeps the panel inside the viewport', () => {
 	for (const anchor of ANCHORS) {
 		const spot = panelOrigin(

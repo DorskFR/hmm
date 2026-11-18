@@ -262,3 +262,28 @@ test.describe('on a touch screen', () => {
 		await expect.poll(() => visibleWidth(page, tab)).toBeLessThan(12);
 	});
 });
+
+test.describe('on a phone', () => {
+	test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+	for (const side of ['left', 'right'])
+		for (const align of ['start', 'center', 'end'])
+			test(`a ${side} ${align} tab opens a panel that leaves it uncovered`, async ({ page }) => {
+				await open(page, { form: 'edge', side, align });
+				const tab = part(page, 'launcher');
+				const r = await rect(tab);
+				await page.touchscreen.tap(
+					side === 'right' ? r.left + 4 : r.right - 4,
+					(r.top + r.bottom) / 2,
+				);
+				await expect.poll(() => visibleWidth(page, tab)).toBeGreaterThan(60);
+				const s = await rect(tab);
+				await page.touchscreen.tap((s.left + s.right) / 2, (s.top + s.bottom) / 2);
+				const panel = part(page, 'panel');
+				await expect(panel).toBeVisible();
+				const [p, t] = [await rect(panel), await rect(tab)];
+				expect(p.left < t.right && t.left < p.right && p.top < t.bottom && t.top < p.bottom).toBe(
+					false,
+				);
+			});
+});
