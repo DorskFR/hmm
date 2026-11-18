@@ -270,7 +270,7 @@ test('a failed send is queued and delivered on the next visit', async ({ page, r
 	expect(await page.evaluate(() => localStorage.getItem('hmm:outbox:demo'))).toBeNull();
 });
 
-test('a rejected send keeps the draft and shows an error', async ({ page }) => {
+test('a permanently rejected send keeps the draft and says so', async ({ page }) => {
 	await page.goto('/bare.html');
 	await page.evaluate(() => {
 		const { init, SendError } = (window as any).hmm;
@@ -284,7 +284,7 @@ test('a rejected send keeps the draft and shows an error', async ({ page }) => {
 	await part(page, 'launcher').click();
 	await part(page, 'comment').fill('keep me');
 	await sendDraft(page);
-	await expect(part(page, 'error')).toHaveText('Sending failed. Please try again.');
+	await expect(part(page, 'error')).toHaveText("This app can't send feedback right now.");
 	await part(page, 'back').click();
 	await expect(part(page, 'comment')).toHaveValue('keep me');
 	expect(await page.evaluate(() => localStorage.getItem('hmm:outbox:bare'))).toBeNull();
@@ -416,4 +416,82 @@ test('as a component, the host opens it and reads its state', async ({ page, req
 	await part(page, 'done').click();
 	await expect(page.getByTestId('host-state')).toHaveText('closed');
 	await expect(part(page, 'panel')).toHaveCount(0);
+});
+
+const CORS = {
+	'access-control-allow-origin': '*',
+	'access-control-allow-headers': 'content-type, x-hmm-key',
+	'access-control-allow-methods': 'POST, OPTIONS',
+};
+
+test('a server rejection is explained to the user and in the console', async ({ page }) => {
+	const errors: string[] = [];
+	page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()));
+	await page.route('https://hmm.test/v1/reports', (route) =>
+		route.request().method() === 'POST'
+			? route.fulfill({ status: 403, headers: CORS, json: { error: 'unknown project' } })
+			: route.fulfill({ status: 204, headers: CORS }),
+	);
+	await page.goto('/bare.html');
+	await page.evaluate(() =>
+		(window as any).hmm.init({ projectKey: 'eql', endpoint: 'https://hmm.test' }),
+	);
+	await part(page, 'launcher').click();
+	await part(page, 'comment').fill('nobody will read this');
+	await sendDraft(page);
+	await expect(part(page, 'error')).toHaveText("This app can't send feedback right now.");
+	const logged = errors.filter((e) => e.includes('[hmm]'));
+	expect(logged).toHaveLength(1);
+	expect(logged[0]).toContain('"eql"');
+	expect(logged[0]).toContain('http://localhost:4188');
+	expect(logged[0]).toContain('403');
+	expect(logged[0]).toContain('unknown project');
+	expect(await page.evaluate(() => localStorage.getItem('hmm:outbox:eql'))).toBeNull();
+});
+
+test('a component with invalid options logs once and renders nothing', async ({ page }) => {
+	const errors: string[] = [];
+	const crashes: Error[] = [];
+	page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()));
+	page.on('pageerror', (err) => crashes.push(err));
+	await page.goto('/bare.html');
+	await page.evaluate(() => {
+		const w = window as any;
+		w.mountHmm({ projectKey: 'has space', endpoint: location.origin });
+		w.mountHmm({ projectKey: 'no-endpoint' });
+	});
+	await expect(page.locator('h1')).toHaveText('Bare page');
+	await expect(page.locator('[data-hmm]')).toHaveCount(0);
+	expect(crashes).toEqual([]);
+	const logged = errors.filter((e) => e.startsWith('[hmm]'));
+	expect(logged).toHaveLength(2);
+	expect(logged[0]).toContain('projectKey');
+	expect(logged[1]).toContain('endpoint or transport');
+	expect(await page.evaluate(() => (window as any).hmm.hmm.mounted)).toBe(false);
+});
+
+test('a blank endpoint turns the component off without an error', async ({ page }) => {
+	const errors: string[] = [];
+	page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()));
+	await page.goto('/bare.html');
+	await page.evaluate(() => {
+		const w = window as any;
+		w.mountHmm({ projectKey: 'off', endpoint: '' });
+		w.mountHmm({ projectKey: 'off', endpoint: '   ' });
+		w.hmm.hmm.open();
+	});
+	await expect(page.locator('[data-hmm]')).toHaveCount(0);
+	expect(errors).toEqual([]);
+	expect(await page.evaluate(() => (window as any).hmm.hmm.mounted)).toBe(false);
+});
+
+test('the French labels render the panel in French', async ({ page }) => {
+	await page.goto('/bare.html');
+	await page.evaluate(() => {
+		const { init, LABELS_FR } = (window as any).hmm;
+		init({ projectKey: 'fr', endpoint: location.origin, labels: LABELS_FR });
+	});
+	await part(page, 'launcher').click();
+	await expect(part(page, 'panel').locator('h2')).toHaveText('Envoyer un retour');
+	await expect(part(page, 'review')).toHaveText('Vérifier');
 });

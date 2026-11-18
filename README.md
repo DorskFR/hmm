@@ -27,12 +27,18 @@ the copies your app already has. The app must load tsumikit's stylesheet, as any
 <Hmm
 	projectKey="my-app"
 	endpoint="https://feedback.example.com"
-	context={() => ({ appVersion: '1.4.2', route: currentRouteName() })}
+	context={() => ({ appVersion: '1.4.2', serverVersion, route: currentRouteName() })}
 />
 ```
 
 Render it once, near the root of the app. By default a "hmm?" pill floats in the bottom-right
 corner; [Launchers](#launchers) shows the other ways to open it.
+
+The component never throws. With an invalid `projectKey`, or with neither `endpoint` nor
+`transport`, it logs one `[hmm]` error to the console and renders nothing. An empty or blank
+`endpoint` string turns it off quietly, so a runtime config can pass its value straight through.
+
+For French, pass `labels={LABELS_FR}` (also exported); spread it to change a few strings.
 
 Outside a Svelte tree, `init` mounts the same component on `<body>`:
 
@@ -44,15 +50,15 @@ feedback.open();
 ```
 
 `init` returns `{ open(), close(), destroy(), isOpen }`. Calling it again replaces the previous
-instance.
+instance. Unlike the component, `init` throws on invalid options.
 
 ### Without Svelte or tsumikit
 
 `@dorsk/hmm/standalone` is one script with Svelte, the panel and a scoped copy of tsumikit's
-tokens inside. It exposes `Hmm.init`, `Hmm.hmm`, `Hmm.LABELS` and `Hmm.VERSION`:
+tokens inside. It exposes `Hmm.init`, `Hmm.hmm`, `Hmm.LABELS`, `Hmm.LABELS_FR` and `Hmm.VERSION`:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.4.0/dist/standalone/hmm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.6.0/dist/standalone/hmm.js"></script>
 <script>
 	Hmm.init({ projectKey: 'my-app', endpoint: 'https://feedback.example.com' });
 </script>
@@ -128,8 +134,9 @@ outside the component that renders `<Hmm>`.
 
 `HmmTrigger` takes `look` (`pill`, `icon`, `button` or `link`), `label`, `title`, `panel` (the
 corner the panel opens in, `bottom-right` by default) and any tsumikit `Button` prop. `hmm` has
-`open(corner?)`, `close()`, `toggle(corner?)` and `isOpen`. It drives the most recently mounted
-panel. `bind:open` on `<Hmm>` keeps working too.
+`open(corner?)`, `close()`, `toggle(corner?)`, `isOpen`, and `mounted`, which is true while a
+panel is rendered (a disabled or misconfigured `<Hmm>` does not count). It drives the most
+recently mounted panel. `bind:open` on `<Hmm>` keeps working too.
 
 ## Props
 
@@ -139,13 +146,13 @@ panel. `bind:open` on `<Hmm>` keeps working too.
 |---|---|---|
 | `projectKey` | `string` | Required. Public identifier of the project, sent with every report. Letters, digits, `.`, `_` and `-`. |
 | `endpoint` | `string` | Base URL of the ingest server. Required unless `transport` is set. |
-| `transport` | `(envelope) => Promise<void>` | Replaces the HTTP POST, for hosts that relay reports through their own backend. Throw an error with `retryable: false` to mark a permanent failure. |
-| `context` | `() => object` | Extra data added to every report. May be async. |
+| `transport` | `(envelope) => Promise<void>` | Replaces the HTTP POST, for hosts that relay reports through their own backend. Throw an error with `retryable: false` (for example a `SendError`) to mark a permanent failure; the user then sees the `rejected` label. |
+| `context` | `() => object` | Extra data added to every report. May be async. Prefer the keys `appVersion`, `serverVersion` and `route` (the route id or pattern, not the full path), so reports from different apps can be compared. |
 | `beforeSend` | `(envelope) => envelope \| null` | Change a report, or drop it by returning `null`. Runs before the review, so the user sees the result. |
 | `launcher` | `false \| Launcher` | How the panel is opened; see [Launchers](#launchers). `false` leaves it to `HmmTrigger`, `hmm.open()` or `bind:open`. |
 | `launcherContent` | `Snippet` | Replaces the icon and label inside the built-in launcher. |
 | `position` | `'bottom-right' \| 'bottom-left'` | Deprecated: use `launcher={{ form: 'floating', anchor }}`. |
-| `labels` | `Partial<Labels>` | Override any text. The defaults are exported as `LABELS`. |
+| `labels` | `Partial<Labels>` | Override any text. The defaults are exported as `LABELS`, the French set as `LABELS_FR`. |
 | `onSent` | `(envelope) => void` | Called after a report is delivered. |
 | `open` | `boolean` | Bindable. Whether the panel is shown. |
 
@@ -156,9 +163,87 @@ a `data-theme` switch or a token override on an ancestor applies to the panel to
 at `--z-toast`; set `--hmm-z-index` on an ancestor to move it. `--hmm-offset-x` and
 `--hmm-offset-y` shift the launcher, for example above a mobile bottom bar, and `--hmm-peek` sets
 how much of an edge tab shows at rest (`--sp-2` by default). `--hmm-zone` sets how far the
-invisible hit area of a tucked launcher reaches in from the edge (`--sp-8` by default).
-`[data-hmm-launcher]` and
-`[data-hmm-trigger]` are there for one-off overrides.
+invisible hit area of a tucked launcher reaches in from the edge (`--sp-8` by default). These
+variables can be set on `:root`, so no wrapper element is needed:
+
+```css
+:root {
+	--hmm-offset-y: var(--bottom-bar-height);
+}
+```
+
+`[data-hmm-launcher]` and `[data-hmm-trigger]` are there for one-off overrides.
+
+`[data-hmm]` wraps the panel and the launcher. Global keyboard shortcut handlers should skip
+events from inside it, as they do for inputs:
+
+```ts
+if ((event.target as Element).closest('input, textarea, select, [data-hmm]')) return;
+```
+
+## Testing
+
+These hooks are stable API; they only change in a major version.
+
+| Selector | Element |
+|---|---|
+| `[data-hmm]` | Root of the panel and launcher |
+| `[data-hmm-launcher]` | Built-in launcher; `data-state` is `tucked`, `peek` or `out` (floating launchers are always `out`) |
+| `[data-hmm-trigger]` | `HmmTrigger` |
+| `[data-id="launcher"]` | The launcher button; `launcher-label` is its text, `launcher-zone` the hit area of a tucked one |
+| `[data-id="panel"]` | The dialog |
+| `[data-id="comment"]` | Main comment field |
+| `[data-id="pick"]`, `[data-id="shot"]` | Select an element, take a screenshot |
+| `[data-id="item"]` | One attached element or screenshot, with `item-label`, `item-comment`, `remove`, `remove-image` |
+| `[data-id="discard"]`, `[data-id="review"]` | Edit view footer |
+| `[data-id="review-body"]`, `[data-id="said"]`, `[data-id="raw"]` | Review view |
+| `[data-id="back"]`, `[data-id="send"]` | Review view footer |
+| `[data-id="result"]`, `[data-id="message"]`, `[data-id="done"]` | Done view |
+| `[data-id="error"]` | Error message |
+| `[data-id="close"]` | Close button |
+
+Wait on these attributes rather than on positions: a tucked launcher slides, so pixel checks are
+flaky. Pressing Enter on the launcher opens the panel with any launcher form, on desktop and on
+touch devices. Route the endpoint and answer with CORS headers, since it is usually on another
+origin:
+
+```ts
+import { expect, test } from '@playwright/test';
+
+test('feedback reaches the server', async ({ page }) => {
+	const reports: unknown[] = [];
+	await page.route('https://feedback.example.com/v1/reports', async (route) => {
+		const post = route.request().method() === 'POST';
+		if (post) reports.push(route.request().postDataJSON());
+		await route.fulfill({
+			status: post ? 202 : 204,
+			headers: {
+				'access-control-allow-origin': '*',
+				'access-control-allow-headers': 'content-type, x-hmm-key',
+				'access-control-allow-methods': 'POST, OPTIONS',
+			},
+		});
+	});
+	await page.goto('/');
+
+	const hmm = (id: string) => page.locator(`[data-hmm] [data-id="${id}"]`);
+	await hmm('launcher').press('Enter');
+	await hmm('comment').fill('The total looks wrong');
+	await hmm('review').click();
+	await hmm('send').click();
+	await expect(hmm('result')).toBeVisible();
+	expect(reports).toHaveLength(1);
+});
+```
+
+To go through the pointer with a tucked launcher, hover its zone (the tab itself is mostly off
+screen, so Playwright cannot aim at it) and wait for the state before clicking:
+
+```ts
+await hmm('launcher-zone').hover();
+await expect(page.locator('[data-hmm-launcher]')).toHaveAttribute('data-state', 'out');
+await hmm('launcher').click();
+```
 
 ## What is sent
 
@@ -201,7 +286,10 @@ x-hmm-key: <projectKey>
 - Any `2xx` answer counts as delivered.
 - `408`, `429`, `5xx` and network errors are retried: the report is stored in `localStorage` and
   sent on the next page load or when the browser comes back online. At most five reports wait.
-- Any other `4xx` is a permanent failure. The user sees an error and keeps the draft.
+- Any other `4xx` is a permanent failure. The user is told the app can't send feedback (the
+  `rejected` label) and keeps the draft. The console gets the status and the `error` field of a
+  JSON answer such as `{ "error": "unknown project" }`, with the project key and the page origin.
+  `httpTransport` throws a `SendError` with `retryable`, `status` and `detail` (that `error` text).
 - The server must answer the CORS preflight and allow the `content-type` and `x-hmm-key` headers.
 - No cookies or credentials are sent.
 

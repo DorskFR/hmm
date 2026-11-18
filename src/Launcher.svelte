@@ -32,6 +32,7 @@
 	let near = $state(0);
 	let drag = $state<number | null>(null);
 	let focused = $state(false);
+	let hovered = $state(false);
 	let keyboard = false;
 	let tab = $state<HTMLButtonElement>();
 	let swipe: { id: number; x: number; y: number; from: number } | null = null;
@@ -40,6 +41,13 @@
 	const iconOnly = $derived(!label || launcher.look === 'icon');
 	const variant = $derived(launcher.look === 'button' ? 'primary' : 'default');
 	const dir = $derived(inward(launcher));
+	const shown = $derived(revealed || active || focused);
+	const phase = $derived.by(() => {
+		if (!tucked) return 'out';
+		if (drag !== null) return drag > 0 ? 'peek' : 'tucked';
+		if (shown || (hovered && pointer !== 'touch')) return 'out';
+		return near > 0 ? 'peek' : 'tucked';
+	});
 
 	function onclick() {
 		if (swallow) {
@@ -146,15 +154,21 @@
 <div
 	bind:this={element}
 	class="launcher {launcher.form}"
-	class:shown={revealed || active || focused}
+	class:shown
 	class:dragging={drag !== null}
 	class:touch={pointer === 'touch'}
 	class:hidden
 	style:--pull={drag ?? near}
 	inert={hidden}
+	role="presentation"
 	onfocusin={() => (focused = keyboard)}
 	{onfocusout}
+	onpointerover={(event) => (hovered = event.pointerType !== 'touch')}
+	onpointerout={(event) => {
+		if (!element?.contains(event.relatedTarget as Node)) hovered = false;
+	}}
 	data-hmm-launcher={launcher.form}
+	data-state={phase}
 	data-anchor={launcher.form === 'floating' ? launcher.anchor : undefined}
 	data-side={launcher.form === 'edge' ? launcher.side : undefined}
 	data-align={launcher.form === 'edge' ? launcher.align : undefined}

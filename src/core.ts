@@ -71,11 +71,24 @@ export function transportOf(
 		throw new Error(
 			'hmm: projectKey must be 1 to 128 letters, digits, dots, dashes or underscores',
 		);
+	const endpoint = options.endpoint?.trim();
 	const transport =
-		options.transport ??
-		(options.endpoint ? httpTransport(options.endpoint, options.projectKey) : null);
+		options.transport ?? (endpoint ? httpTransport(endpoint, options.projectKey) : null);
 	if (!transport) throw new Error('hmm: either endpoint or transport is required');
 	return transport;
+}
+
+export type Setup = { transport: Transport | null; error?: string };
+
+/** Like `transportOf` but never throws; a blank `endpoint` means disabled. */
+export function setupOf(options: Pick<Options, 'projectKey' | 'endpoint' | 'transport'>): Setup {
+	if (!options.transport && typeof options.endpoint === 'string' && !options.endpoint.trim())
+		return { transport: null };
+	try {
+		return { transport: transportOf(options) };
+	} catch (err) {
+		return { transport: null, error: (err as Error).message };
+	}
 }
 
 /** The report as shown to the user: image data replaced by its size. */

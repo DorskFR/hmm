@@ -94,6 +94,36 @@ test('an edge tab slides out as the mouse comes close and opens from its wider z
 	await expect(part(page, 'panel')).toBeVisible();
 });
 
+test('an edge tab reports tucked, peek and out in data-state', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'right', align: 'center' });
+	const launcher = page.locator('[data-hmm-launcher]');
+	const tab = part(page, 'launcher');
+	const r = await rect(tab);
+	const y = (r.top + r.bottom) / 2;
+	const { width } = viewport(page);
+	await page.mouse.move(width - 400, y);
+	await expect(launcher).toHaveAttribute('data-state', 'tucked');
+
+	await page.mouse.move(width - (r.right - r.left) - 20, y);
+	await expect(launcher).toHaveAttribute('data-state', 'peek');
+
+	await page.mouse.move((await rect(tab)).left + 4, y);
+	await expect(launcher).toHaveAttribute('data-state', 'out');
+	await tab.click();
+	await expect(part(page, 'panel')).toBeVisible();
+	await page.mouse.move(10, 10);
+	await expect(launcher).toHaveAttribute('data-state', 'out');
+
+	await part(page, 'close').click();
+	await page.mouse.move(10, 10);
+	await expect(launcher).toHaveAttribute('data-state', 'tucked');
+});
+
+test('a floating launcher is always out', async ({ page }) => {
+	await open(page, { form: 'floating', anchor: 'bottom-right' });
+	await expect(page.locator('[data-hmm-launcher]')).toHaveAttribute('data-state', 'out');
+});
+
 test('a corner bubble peeks out as the mouse comes close', async ({ page }) => {
 	await open(page, { form: 'corner', corner: 'bottom-right' });
 	const bubble = part(page, 'launcher');
@@ -216,6 +246,18 @@ test.describe('on a touch screen', () => {
 		await expect.poll(() => visibleWidth(page, tab)).toBeGreaterThan(60);
 		const s = await rect(tab);
 		await page.touchscreen.tap((s.left + s.right) / 2, (s.top + s.bottom) / 2);
+		await expect(part(page, 'panel')).toBeVisible();
+	});
+
+	test('a tap reports the tab as out before the second tap opens it', async ({ page }) => {
+		await open(page, { form: 'edge', side: 'right', align: 'end' });
+		const launcher = page.locator('[data-hmm-launcher]');
+		const tab = part(page, 'launcher');
+		await expect(launcher).toHaveAttribute('data-state', 'tucked');
+		await tab.tap();
+		await expect(launcher).toHaveAttribute('data-state', 'out');
+		await expect(part(page, 'panel')).toHaveCount(0);
+		await tab.tap();
 		await expect(part(page, 'panel')).toBeVisible();
 	});
 
