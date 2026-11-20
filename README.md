@@ -1,8 +1,8 @@
 # @dorsk/hmm
 
 A feedback panel for Svelte 5 apps built on [tsumikit](https://github.com/DorskFR/tsumikit). The
-user opens "Send feedback", selects elements on the page, comments on them, adds screenshots,
-reviews exactly what will be sent, and sends it to an endpoint you own.
+user opens "Send feedback", selects elements on the page, comments on them, adds screenshots or
+images from their device, reviews exactly what will be sent, and sends it to an endpoint you own.
 
 The panel is made of tsumikit components (`Card`, `Button`, `Field`, `Textarea`, `Disclosure`, …), so
 it has no palette, font or control shapes of its own: it looks like the app it is in and follows
@@ -58,7 +58,7 @@ instance. Unlike the component, `init` throws on invalid options.
 tokens inside. It exposes `Hmm.init`, `Hmm.hmm`, `Hmm.LABELS`, `Hmm.LABELS_FR` and `Hmm.VERSION`:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.6.0/dist/standalone/hmm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.7.0/dist/standalone/hmm.js"></script>
 <script>
 	Hmm.init({ projectKey: 'my-app', endpoint: 'https://feedback.example.com' });
 </script>
@@ -193,7 +193,7 @@ These hooks are stable API; they only change in a major version.
 | `[data-id="launcher"]` | The launcher button; `launcher-label` is its text, `launcher-zone` the hit area of a tucked one |
 | `[data-id="panel"]` | The dialog |
 | `[data-id="comment"]` | Main comment field |
-| `[data-id="pick"]`, `[data-id="shot"]` | Select an element, take a screenshot |
+| `[data-id="pick"]`, `[data-id="shot"]`, `[data-id="upload"]` | Select an element, take a screenshot, add an image file |
 | `[data-id="item"]` | One attached element or screenshot, with `item-label`, `item-comment`, `remove`, `remove-image` |
 | `[data-id="discard"]`, `[data-id="review"]` | Edit view footer |
 | `[data-id="review-body"]`, `[data-id="said"]`, `[data-id="raw"]` | Review view |
@@ -313,14 +313,17 @@ make the text safe to render or to hand to an agent, and it does not decode the 
   keys and `password=`-style pairs. URLs lose their credentials and secret-looking query
   parameters. `redactText`, `redactUrl` and `redactEnvelope` are exported.
 - The HTML of an element is not recorded when it is, or contains, a password field.
-- Screenshots cannot be scrubbed. They are shown in the review and each one can be removed.
+- Screenshots and added images cannot be scrubbed. They are shown in the review and each one can be removed.
 
 ## Limitations
 
 - Pages without tsumikit's stylesheet need `@dorsk/hmm/scoped.css` or the standalone script.
 - An open `<dialog>` modal makes the rest of the page inert, the panel included.
 - Screenshots are rendered from the DOM, not captured from the screen. Cross-origin images without
-  CORS, `<video>`, and canvases tainted by cross-origin content come out blank.
+  CORS, `<video>`, and canvases tainted by cross-origin content come out blank. To attach what
+  the screen really shows, the user can add an image file, such as a screenshot taken by the OS.
+- Added images are re-encoded as PNG, downscaled to at most 1600 px on their longest side, and
+  sent as `screenshot` items.
 - A strict Content Security Policy must allow `data:` in `img-src` for the thumbnails.
 - Elements inside iframes or closed shadow roots cannot be selected.
 

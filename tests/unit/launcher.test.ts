@@ -114,6 +114,24 @@ test('on a phone an edge panel that cannot sit beside its tab stacks above or be
 		}
 });
 
+test('a panel taller than the room above or below its tab is shortened to fit', () => {
+	const phone = { width: 390, height: 844 };
+	const tall = { width: 358, height: 560 };
+	const from = box(-12, 400, 100, 44);
+	const spot = panelOrigin(
+		placementFor(resolve({ form: 'edge', side: 'left', align: 'center' }), from),
+		tall,
+		phone,
+		16,
+		8,
+	);
+	expect(spot.maxHeight).toBeDefined();
+	const placed = box(spot.left, spot.top, tall.width, spot.maxHeight ?? tall.height);
+	expect(overlaps(placed, from)).toBe(false);
+	expect(placed.top).toBeGreaterThanOrEqual(16);
+	expect(placed.bottom).toBeLessThanOrEqual(phone.height - 16);
+});
+
 test('on a short screen a top or bottom panel sits beside its tab', () => {
 	const short = { width: 1000, height: 360 };
 	for (const side of ['top', 'bottom'] as const)

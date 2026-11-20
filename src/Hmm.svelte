@@ -9,6 +9,7 @@
 		Disclosure,
 		EmptyState,
 		Field,
+		FileButton,
 		Heading,
 		IconButton,
 		KeyValue,
@@ -36,7 +37,7 @@
 	import { LABELS, type Labels } from './labels.ts';
 	import { elementAt } from './picker.ts';
 	import { redactEnvelope } from './redact.ts';
-	import { capture, type Shot } from './shot.ts';
+	import { capture, fromFile, type Shot } from './shot.ts';
 	import { enqueue, flush, isRetryable, SendError } from './transport.ts';
 	import { VERSION } from './version.ts';
 
@@ -179,24 +180,36 @@
 		await focusItem(item.id);
 	}
 
-	async function addShot() {
-		if (busy || !host) return;
-		if (draft.items.length >= LIMITS.items || draft.attachments.length >= LIMITS.attachments) {
-			error = L.full;
-			return;
-		}
+	function roomForImage() {
+		error =
+			draft.items.length >= LIMITS.items || draft.attachments.length >= LIMITS.attachments
+				? L.full
+				: '';
+		return !error;
+	}
+
+	async function addImage(take: () => Promise<Shot>, failed: string) {
+		if (busy || !roomForImage()) return;
 		busy = 'capture';
-		error = '';
 		try {
 			const id = uid();
-			const attachment = attach(await capture(window, null, host));
+			const attachment = attach(await take());
 			draft.items.push({ id, type: 'screenshot', url: location.href, comment: '', attachment });
 			void focusItem(id);
 		} catch (err) {
-			console.warn('[hmm] screenshot failed', err);
-			error = L.shotFailed;
+			console.warn('[hmm] image failed', err);
+			error = failed;
 		}
 		busy = '';
+	}
+
+	function addShot() {
+		const exclude = host;
+		if (exclude) void addImage(() => capture(window, null, exclude), L.shotFailed);
+	}
+
+	function addFile([file]: File[]) {
+		if (file) void addImage(() => fromFile(file), L.uploadFailed);
 	}
 
 	async function build(): Promise<Envelope | null> {
@@ -306,9 +319,18 @@
 
 	function place() {
 		if (!panelEl) return;
+		panelEl.style.maxHeight = '';
 		const { width, height } = panelEl.getBoundingClientRect();
 		const viewport = { width: innerWidth, height: innerHeight };
-		spot = panelOrigin(placement(), { width, height }, viewport, EDGE_MARGIN, EDGE_MARGIN / 2);
+		const { maxHeight, ...origin } = panelOrigin(
+			placement(),
+			{ width, height },
+			viewport,
+			EDGE_MARGIN,
+			EDGE_MARGIN / 2,
+		);
+		panelEl.style.maxHeight = maxHeight === undefined ? '' : `${maxHeight}px`;
+		spot = origin;
 	}
 
 	export function isOpen() {
@@ -599,6 +621,15 @@
 									>
 										{L.shot}
 									</Button>
+									<span class="upload" data-id="upload">
+										<FileButton
+											icon="image"
+											label={L.upload}
+											accept="image/*"
+											disabled={!!busy}
+											onfiles={addFile}
+										/>
+									</span>
 								</Cluster>
 							</Stack>
 							{#if busy === 'capture'}
@@ -716,6 +747,9 @@
 		stroke-width: 2;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+	}
+	.upload {
+		display: contents;
 	}
 	.shot {
 		display: block;
