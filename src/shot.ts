@@ -53,18 +53,44 @@ export async function capture(
 				}),
 	};
 
-	let scale = Math.min(1, MAX_SIDE / Math.max(size.width, size.height));
+	return fit(size.width, size.height, (scale) =>
+		domToPng(target ?? doc.documentElement, { ...base, scale }),
+	);
+}
+
+/** Re-encodes an image the user picked as a PNG that fits the attachment limits. */
+export async function fromFile(file: Blob): Promise<Shot> {
+	const bitmap = await createImageBitmap(file);
+	try {
+		return await fit(bitmap.width, bitmap.height, async (scale) => {
+			const canvas = document.createElement('canvas');
+			canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+			canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+			canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+			return canvas.toDataURL('image/png');
+		});
+	} finally {
+		bitmap.close();
+	}
+}
+
+async function fit(
+	width: number,
+	height: number,
+	render: (scale: number) => Promise<string>,
+): Promise<Shot> {
+	let scale = Math.min(1, MAX_SIDE / Math.max(width, height));
 	for (let attempt = 0; attempt < 3; attempt++, scale /= 2) {
-		const url = await domToPng(target ?? doc.documentElement, { ...base, scale });
+		const url = await render(scale);
 		if (!url.startsWith(PREFIX)) break;
 		const data = url.slice(PREFIX.length);
 		if (data.length <= LIMITS.attachmentChars) {
 			return {
 				data,
-				width: Math.max(1, Math.round(size.width * scale)),
-				height: Math.max(1, Math.round(size.height * scale)),
+				width: Math.max(1, Math.round(width * scale)),
+				height: Math.max(1, Math.round(height * scale)),
 			};
 		}
 	}
-	throw new Error('the screenshot is too large');
+	throw new Error('the image is too large');
 }

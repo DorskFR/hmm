@@ -8,6 +8,7 @@ export const LABELS = {
 	attach: 'Attach context (optional)',
 	pick: 'Point at something',
 	shot: 'Screenshot',
+	upload: 'Add image',
 	pickHint: 'Click what you mean. Press Esc to cancel.',
 	capturing: 'Capturing…',
 	itemPlaceholder: 'What about this?',
@@ -32,6 +33,7 @@ export const LABELS = {
 	rejected: "This app can't send feedback right now.",
 	blocked: 'This feedback cannot be sent from this page.',
 	shotFailed: 'The screenshot could not be taken.',
+	uploadFailed: 'This image could not be read.',
 	full: 'You have reached the maximum for one report.',
 	done: 'Done',
 };
@@ -48,6 +50,7 @@ export const LABELS_FR: Labels = {
 	attach: 'Joindre du contexte (facultatif)',
 	pick: 'Désigner un élément',
 	shot: "Capture d'écran",
+	upload: 'Ajouter une image',
 	pickHint: 'Cliquez sur ce dont vous parlez. Échap pour annuler.',
 	capturing: 'Capture…',
 	itemPlaceholder: "Qu'en est-il de ceci ?",
@@ -72,6 +75,7 @@ export const LABELS_FR: Labels = {
 	rejected: 'Cette application ne peut pas envoyer de retour pour le moment.',
 	blocked: 'Ce retour ne peut pas être envoyé depuis cette page.',
 	shotFailed: "La capture d'écran n'a pas pu être prise.",
+	uploadFailed: "Cette image n'a pas pu être lue.",
 	full: 'Vous avez atteint le maximum pour un seul retour.',
 	done: 'Terminé',
 };

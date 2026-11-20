@@ -165,6 +165,48 @@ test('a viewport screenshot is attached at the viewport size', async ({ page, re
 	expect(report?.attachments[0]).toMatchObject({ mime: 'image/png', width: 1280, height: 800 });
 });
 
+test('an image file from the device is attached as a PNG that fits the limits', async ({
+	page,
+	request,
+}) => {
+	await page.goto('/');
+	const jpeg = await page.evaluate(() => {
+		const canvas = document.createElement('canvas');
+		canvas.width = 3200;
+		canvas.height = 1000;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) throw new Error('no 2d context');
+		ctx.fillStyle = '#3366cc';
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+		return canvas.toDataURL('image/jpeg').split(',')[1] ?? '';
+	});
+	await part(page, 'launcher').click();
+	const chooser = page.waitForEvent('filechooser');
+	await part(page, 'upload').locator('label').click();
+	await (await chooser).setFiles({
+		name: 'photo.jpg',
+		mimeType: 'image/jpeg',
+		buffer: Buffer.from(jpeg, 'base64'),
+	});
+	await expect(part(page, 'item').locator('img')).toBeVisible();
+
+	await part(page, 'upload')
+		.locator('input')
+		.setInputFiles({
+			name: 'notes.txt',
+			mimeType: 'text/plain',
+			buffer: Buffer.from('not an image'),
+		});
+	await expect(part(page, 'error')).toHaveText('This image could not be read.');
+	await expect(part(page, 'item')).toHaveCount(1);
+
+	await sendDraft(page);
+	await expect(part(page, 'message')).toBeVisible();
+	const [report] = await received(request);
+	expect(report?.items[0]).toMatchObject({ type: 'screenshot' });
+	expect(report?.attachments[0]).toMatchObject({ mime: 'image/png', width: 1600, height: 500 });
+});
+
 test('items and their images can be removed, and the draft discarded', async ({
 	page,
 	request,

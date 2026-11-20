@@ -117,7 +117,7 @@ export function panelOrigin(
 	viewport: Size,
 	margin: number,
 	gap: number,
-): { left: number; top: number } {
+): { left: number; top: number; maxHeight?: number } {
 	if (placement.mode === 'corner') {
 		const [v, h] = split(placement.corner);
 		return {
@@ -138,14 +138,22 @@ export function panelOrigin(
 		mode = 'beside';
 		flip = roomier(from.left, from.right, viewport.width);
 	}
+	const room =
+		mode === 'stack'
+			? flip === 'after'
+				? viewport.height - margin - from.bottom - gap
+				: from.top - gap - margin
+			: Number.POSITIVE_INFINITY;
+	const height = Math.min(panel.height, Math.max(0, room));
 	let left = along(h, from.left, from.right, panel.width);
-	let top = along(v, from.top, from.bottom, panel.height);
+	let top = along(v, from.top, from.bottom, height);
 	if (mode === 'beside') left = flip === 'after' ? from.right + gap : from.left - gap - panel.width;
-	if (mode === 'stack') top = flip === 'after' ? from.bottom + gap : from.top - gap - panel.height;
-	return {
+	if (mode === 'stack') top = flip === 'after' ? from.bottom + gap : from.top - gap - height;
+	const origin = {
 		left: within(left, panel.width, viewport.width, mode === 'beside' ? gap : margin),
-		top: within(top, panel.height, viewport.height, mode === 'stack' ? gap : margin),
+		top: within(top, height, viewport.height, mode === 'stack' ? gap : margin),
 	};
+	return height < panel.height ? { ...origin, maxHeight: height } : origin;
 }
 
 export function inward(launcher: Resolved): { x: number; y: number } {
