@@ -546,7 +546,6 @@
 							<EmptyState
 								icon={delivered ? 'check-circle' : 'alert-circle'}
 								tone={delivered ? 'ok' : 'warn'}
-								style="--empty-tone: var(--{delivered ? 'ok' : 'warn'})"
 								title={delivered ? L.sentTitle : L.queuedTitle}
 							>
 								{#snippet description()}<span data-id="message">{message}</span>{/snippet}
