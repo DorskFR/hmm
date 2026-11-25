@@ -45,6 +45,7 @@
 		type Spot,
 	} from './launcher.ts';
 	import { LABELS, type Labels } from './labels.ts';
+	import { followModals } from './modal-layer.ts';
 	import { loadSpot, saveSpot, spotKey } from './placement-store.ts';
 	import { elementAt } from './picker.ts';
 	import { redactEnvelope } from './redact.ts';
@@ -395,6 +396,7 @@
 
 	function onKey(event: KeyboardEvent) {
 		if (event.key !== 'Escape' || !open || picking) return;
+		event.preventDefault();
 		event.stopPropagation();
 		hide();
 	}
@@ -431,6 +433,10 @@
 	});
 
 	$effect(placePins);
+
+	$effect(() => {
+		if (host) return followModals(host);
+	});
 
 	$effect(() => {
 		if (!launcherEl) return;
@@ -775,12 +781,13 @@
 	.hmm {
 		display: contents;
 		--z: var(--hmm-z-index, var(--z-toast, 300));
+		--z-top: var(--hmm-z-index-raised, 2147483000);
 	}
 	.panel {
 		position: fixed;
 		top: 0;
 		left: 0;
-		z-index: var(--z);
+		z-index: var(--z-top);
 		visibility: hidden;
 		display: flex;
 		flex-direction: column;
@@ -851,7 +858,7 @@
 		position: fixed;
 		top: 0;
 		left: 0;
-		z-index: calc(var(--z) - 1);
+		z-index: calc(var(--z-top) - 1);
 		border-radius: var(--r-pill);
 		background: var(--surface);
 		box-shadow: var(--shadow-md);
@@ -868,14 +875,14 @@
 	.glass {
 		position: fixed;
 		inset: 0;
-		z-index: var(--z);
+		z-index: var(--z-top);
 		cursor: crosshair;
 	}
 	.outline {
 		position: fixed;
 		top: 0;
 		left: 0;
-		z-index: var(--z);
+		z-index: var(--z-top);
 		border: 2px solid var(--accent);
 		border-radius: var(--r-xs);
 		background: color-mix(in srgb, var(--accent) 15%, transparent);
@@ -885,7 +892,7 @@
 		position: fixed;
 		top: var(--sp-4);
 		left: 50%;
-		z-index: var(--z);
+		z-index: var(--z-top);
 		transform: translateX(-50%);
 		border-radius: var(--r-lg);
 		box-shadow: var(--shadow-lg);

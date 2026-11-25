@@ -46,12 +46,16 @@
 	const REACH = 96;
 	const SLOP = 8;
 	const LONG_PRESS = 400;
+	const TOUCH = 32;
 	const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 	const hintId = uid();
 
 	let revealed = $state(false);
 	let pointer = $state('');
 	let near = $state(0);
+	let close = $state(false);
+	let touched = $state(false);
+	let within = $state(false);
 	let drag = $state<number | null>(null);
 	let moving = $state<{ dx: number; dy: number; spot: Spot } | null>(null);
 	let focused = $state(false);
@@ -74,6 +78,8 @@
 	const variant = $derived(launcher.look === 'button' ? 'primary' : 'default');
 	const dir = $derived(inward(launcher));
 	const shown = $derived(revealed || active || focused || moving !== null);
+	const pull = $derived(drag ?? (tucked && !revealed && !active ? near : 0));
+	const raised = $derived(shown || close || touched || within || hovered || drag !== null);
 	const offset = $derived(launcher.form === 'edge' ? launcher.offset : undefined);
 	const upright = $derived(
 		launcher.form === 'edge' && (launcher.side === 'left' || launcher.side === 'right'),
@@ -82,7 +88,7 @@
 		if (!tucked) return 'out';
 		if (drag !== null) return drag > 0 ? 'peek' : 'tucked';
 		if (shown || (hovered && pointer !== 'touch')) return 'out';
-		return near > 0 ? 'peek' : 'tucked';
+		return pull > 0 ? 'peek' : 'tucked';
 	});
 
 	const viewport = () => ({
@@ -201,17 +207,19 @@
 
 	$effect(() => () => clearTimeout(hold));
 
+	const gap = (x: number, y: number) => {
+		const box = element?.getBoundingClientRect();
+		return box ? distance(box, x, y) : Infinity;
+	};
+
 	$effect(() => {
-		if (!tucked || revealed || active) {
-			near = 0;
-			return;
-		}
 		let frame = 0;
 		let at = { x: 0, y: 0 };
 		const measure = () => {
 			frame = 0;
-			const box = element?.getBoundingClientRect();
-			if (box) near = approach(distance(box, at.x, at.y), REACH);
+			const d = gap(at.x, at.y);
+			near = approach(d, REACH);
+			close = d < REACH;
 		};
 		const move = (event: PointerEvent) => {
 			if (event.pointerType === 'touch') return;
@@ -219,7 +227,9 @@
 			frame ||= requestAnimationFrame(measure);
 		};
 		const out = (event: PointerEvent) => {
-			if (!event.relatedTarget) near = 0;
+			if (event.relatedTarget) return;
+			near = 0;
+			close = false;
 		};
 		document.addEventListener('pointermove', move, { passive: true });
 		document.addEventListener('pointerout', out);
@@ -232,7 +242,12 @@
 
 	$effect(() => {
 		const key = () => (keyboard = true);
-		const point = () => (keyboard = false);
+		const point = (event: PointerEvent) => {
+			keyboard = false;
+			if (event.pointerType !== 'touch') return;
+			touched = gap(event.clientX, event.clientY) < TOUCH;
+			if (touched) pointer = 'touch';
+		};
 		document.addEventListener('keydown', key, true);
 		document.addEventListener('pointerdown', point, true);
 		return () => {
@@ -242,7 +257,9 @@
 	});
 
 	function onfocusout(event: FocusEvent) {
-		if (!element?.contains(event.relatedTarget as Node)) focused = false;
+		if (element?.contains(event.relatedTarget as Node)) return;
+		focused = false;
+		within = false;
 	}
 
 	$effect(() => {
@@ -285,7 +302,8 @@
 	class:movable
 	class:touch={pointer === 'touch'}
 	class:hidden
-	style:--pull={drag ?? near}
+	class:raised
+	style:--pull={pull}
 	style:transform={moving ? `translate(${moving.dx}px, ${moving.dy}px)` : undefined}
 	style:top={offset !== undefined && upright ? `${offset}px` : undefined}
 	style:bottom={offset !== undefined && upright ? 'auto' : undefined}
@@ -294,7 +312,10 @@
 	style:translate={offset === undefined ? undefined : upright ? '0 -50%' : '-50% 0'}
 	inert={hidden}
 	role="presentation"
-	onfocusin={() => (focused = keyboard)}
+	onfocusin={() => {
+		focused = keyboard;
+		within = true;
+	}}
 	{onfocusout}
 	onpointerover={(event) => (hovered = event.pointerType !== 'touch')}
 	onpointerout={(event) => {
@@ -385,8 +406,10 @@
 	.movable.floating > :global(*) {
 		touch-action: none;
 	}
+	.raised {
+		z-index: var(--z-top);
+	}
 	.moving {
-		z-index: calc(var(--z) + 1);
 		cursor: grabbing;
 	}
 	.moving .tab {
@@ -395,7 +418,7 @@
 	}
 	.preview {
 		position: fixed;
-		z-index: var(--z);
+		z-index: var(--z-top);
 		border: 2px dashed var(--accent);
 		border-radius: var(--r-lg);
 		background: color-mix(in srgb, var(--accent) 12%, transparent);

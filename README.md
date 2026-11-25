@@ -135,6 +135,22 @@ in the panel header (shown while the launcher is moved), clears it.
 
 `movable: false` locks the launcher where the app put it and ignores any stored spot.
 
+**Over modals**: at rest the launcher sits at `--hmm-z-index`, so an open modal covers it. When
+the mouse comes near, the launcher gets focus, or a touch lands on it, it rises above
+everything, and its panel stays above until it is closed. On touch, the first tap on a covered
+tab raises it and slides it out; the next opens the panel. While a native `<dialog>` is open with
+`showModal()`, the page behind it is inert, so `[data-hmm]` moves into the topmost modal dialog
+and moves back when it closes, keeping the draft. Inside the dialog it shows above the backdrop,
+and Escape in the panel closes the panel, not the dialog.
+
+Modal libraries that trap focus or make the rest of the page `inert` need to let `[data-hmm]`
+through, or the panel cannot be typed in: skip it when setting `inert` or `aria-hidden` on the
+page, and have the trap's focus and click handlers ignore events from inside it:
+
+```ts
+if ((event.target as Element).closest('[data-hmm]')) return;
+```
+
 **Your own button**: set `launcher={false}` and open the panel from anywhere in the app, inside or
 outside the component that renders `<Hmm>`.
 
@@ -180,8 +196,9 @@ recently mounted panel. `bind:open` on `<Hmm>` keeps working too.
 ## Styling
 
 Colours, spacing, radii and type come from the tsumikit tokens in scope where `Hmm` is rendered, so
-a `data-theme` switch or a token override on an ancestor applies to the panel too. The panel sits
-at `--z-toast`; set `--hmm-z-index` on an ancestor to move it. `--hmm-offset-x` and
+a `data-theme` switch or a token override on an ancestor applies to the panel too. The launcher
+rests at `--z-toast`; set `--hmm-z-index` on an ancestor to move it. The open panel and an engaged
+launcher sit at `--hmm-z-index-raised` (`2147483000` by default). `--hmm-offset-x` and
 `--hmm-offset-y` shift the launcher, for example above a mobile bottom bar, and `--hmm-peek` sets
 how much of an edge tab shows at rest (`--sp-2` by default). `--hmm-zone` sets how far the
 invisible hit area of a tucked launcher reaches in from the edge (`--sp-8` by default). These
@@ -339,7 +356,10 @@ make the text safe to render or to hand to an agent, and it does not decode the 
 ## Limitations
 
 - Pages without tsumikit's stylesheet need `@dorsk/hmm/scoped.css` or the standalone script.
-- An open `<dialog>` modal makes the rest of the page inert, the panel included.
+- While a native modal dialog is open the launcher and panel live inside it. A dialog styled
+  with `transform`, `filter` or `contain` becomes their containing block and may clip them, and
+  tokens or `--hmm-*` variables set on an ancestor of `<Hmm>` (rather than `:root`) do not apply
+  there. A dialog that closes on any click outside its own box closes on clicks in the panel.
 - Screenshots are rendered from the DOM, not captured from the screen. Cross-origin images without
   CORS, `<video>`, and canvases tainted by cross-origin content come out blank. To attach what
   the screen really shows, the user can add an image file, such as a screenshot taken by the OS.
