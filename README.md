@@ -201,12 +201,14 @@ rests at `--z-toast`; set `--hmm-z-index` on an ancestor to move it. The open pa
 launcher sit at `--hmm-z-index-raised` (`2147483000` by default). `--hmm-offset-x` and
 `--hmm-offset-y` shift the launcher, for example above a mobile bottom bar, and `--hmm-peek` sets
 how much of an edge tab shows at rest (`--sp-2` by default). `--hmm-zone` sets how far the
-invisible hit area of a tucked launcher reaches in from the edge (`--sp-8` by default). These
-variables can be set on `:root`, so no wrapper element is needed:
+invisible hit area of a tucked launcher reaches in from the edge (`--sp-8` by default).
+`--hmm-inset-bottom` keeps the panel clear of a bottom bar; the device safe area is always kept
+clear. These variables can be set on `:root`, so no wrapper element is needed:
 
 ```css
 :root {
 	--hmm-offset-y: var(--bottom-bar-height);
+	--hmm-inset-bottom: var(--bottom-bar-height);
 }
 ```
 

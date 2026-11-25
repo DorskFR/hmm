@@ -493,4 +493,41 @@ test.describe('on a phone', () => {
 					false,
 				);
 			});
+	const openPanel = async (page: Page) => {
+		await open(page, { form: 'floating', anchor: 'bottom-right' });
+		await part(page, 'launcher').click();
+		await expect(part(page, 'panel')).toBeVisible();
+	};
+
+	test('the attachment buttons line up in an even grid', async ({ page }) => {
+		await openPanel(page);
+		const boxes = await Promise.all(
+			[part(page, 'pick'), part(page, 'shot'), part(page, 'upload').locator('> *').first()].map(
+				rect,
+			),
+		);
+		const widths = boxes.map((b) => b.right - b.left);
+		for (const w of widths) expect(Math.abs(w - widths[0])).toBeLessThanOrEqual(1);
+		const panel = await rect(part(page, 'panel'));
+		for (const b of boxes) expect(b.right).toBeLessThanOrEqual(panel.right);
+		expect(boxes[2].left).toBeCloseTo(boxes[0].left, 0);
+	});
+
+	test('the subtitle and the details label keep their spacing', async ({ page }) => {
+		await openPanel(page);
+		const subtitle = await rect(part(page, 'subtitle'));
+		const label = await rect(part(page, 'panel').getByText('Details', { exact: true }));
+		expect(label.top - subtitle.bottom).toBeGreaterThanOrEqual(12);
+	});
+
+	test('the panel stays clear of a host bottom bar', async ({ page }) => {
+		await page.addInitScript(() =>
+			document.addEventListener('DOMContentLoaded', () =>
+				document.documentElement.style.setProperty('--hmm-inset-bottom', '64px'),
+			),
+		);
+		await openPanel(page);
+		const panel = await rect(part(page, 'panel'));
+		expect(panel.bottom).toBeLessThanOrEqual(viewport(page).height - 64);
+	});
 });

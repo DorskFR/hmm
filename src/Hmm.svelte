@@ -378,7 +378,8 @@
 		if (!panelEl) return;
 		panelEl.style.maxHeight = '';
 		const { width, height } = panelEl.getBoundingClientRect();
-		const viewport = { width: innerWidth, height: innerHeight };
+		const bottom = Number.parseFloat(getComputedStyle(panelEl).scrollMarginBottom) || 0;
+		const viewport = { width: innerWidth, height: innerHeight - bottom };
 		const { maxHeight, ...origin } = panelOrigin(
 			placement(),
 			{ width, height },
@@ -700,7 +701,7 @@
 							{/each}
 							<Stack gap="var(--sp-2)" role="group" aria-labelledby={ids.attach}>
 								<Text tone="muted" size="sm" id={ids.attach}>{L.attach}</Text>
-								<Cluster>
+								<div class="attach">
 									<Button data-id="pick" glyph={pointerGlyph} disabled={!!busy} onclick={beginPick}>
 										{L.pick}
 									</Button>
@@ -721,7 +722,7 @@
 											onfiles={addFile}
 										/>
 									</span>
-								</Cluster>
+								</div>
 							</Stack>
 							{#if busy === 'capture'}
 								<Text as="p" tone="muted" size="sm" role="status">{L.capturing}</Text>
@@ -793,7 +794,9 @@
 		flex-direction: column;
 		width: 30rem;
 		max-width: calc(100vw - 2 * var(--sp-4));
-		max-height: min(42rem, calc(100dvh - 2 * var(--sp-4)));
+		--inset-bottom: max(env(safe-area-inset-bottom, 0px), var(--hmm-inset-bottom, 0px));
+		max-height: min(42rem, calc(100dvh - 2 * var(--sp-4) - var(--inset-bottom)));
+		scroll-margin-bottom: var(--inset-bottom);
 		border-radius: var(--r-lg);
 		box-shadow: var(--shadow-lg);
 	}
@@ -841,6 +844,11 @@
 		stroke-width: 2;
 		stroke-linecap: round;
 		stroke-linejoin: round;
+	}
+	.attach {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
+		gap: var(--sp-2);
 	}
 	.upload {
 		display: contents;
