@@ -501,16 +501,17 @@ test.describe('on a phone', () => {
 
 	test('the attachment buttons line up in an even grid', async ({ page }) => {
 		await openPanel(page);
-		const boxes = await Promise.all(
-			[part(page, 'pick'), part(page, 'shot'), part(page, 'upload').locator('> *').first()].map(
-				rect,
-			),
-		);
-		const widths = boxes.map((b) => b.right - b.left);
-		for (const w of widths) expect(Math.abs(w - widths[0])).toBeLessThanOrEqual(1);
+		const [pick, shot, upload] = await Promise.all([
+			rect(part(page, 'pick')),
+			rect(part(page, 'shot')),
+			rect(part(page, 'upload').locator('> *').first()),
+		]);
+		const width = pick.right - pick.left;
+		for (const b of [shot, upload])
+			expect(Math.abs(b.right - b.left - width)).toBeLessThanOrEqual(1);
 		const panel = await rect(part(page, 'panel'));
-		for (const b of boxes) expect(b.right).toBeLessThanOrEqual(panel.right);
-		expect(boxes[2].left).toBeCloseTo(boxes[0].left, 0);
+		for (const b of [pick, shot, upload]) expect(b.right).toBeLessThanOrEqual(panel.right);
+		expect(upload.left).toBeCloseTo(pick.left, 0);
 	});
 
 	test('the subtitle and the details label keep their spacing', async ({ page }) => {
