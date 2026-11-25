@@ -28,6 +28,9 @@ test('the standalone script styles the panel, leaves the page alone and sends', 
 	});
 	expect(await style(page, 'panel', 'background-color')).not.toBe('rgba(0, 0, 0, 0)');
 	expect(await style(page, 'subtitle', 'font-family')).toMatch(/Inter|system-ui|sans-serif/);
+	const input = await part(page, 'upload').locator('input[type="file"]').boundingBox();
+	expect(input?.width).toBeLessThanOrEqual(1);
+	await expect(part(page, 'upload')).toContainText('Add image');
 
 	const dark = await style(page, 'panel', 'background-color');
 	await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'solarizedlight'));
