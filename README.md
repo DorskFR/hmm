@@ -58,7 +58,7 @@ instance. Unlike the component, `init` throws on invalid options.
 tokens inside. It exposes `Hmm.init`, `Hmm.hmm`, `Hmm.LABELS`, `Hmm.LABELS_FR` and `Hmm.VERSION`:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.7.1/dist/standalone/hmm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.8.0/dist/standalone/hmm.js"></script>
 <script>
 	Hmm.init({ projectKey: 'my-app', endpoint: 'https://feedback.example.com' });
 </script>
