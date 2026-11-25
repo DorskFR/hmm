@@ -1,59 +1,109 @@
 <script lang="ts">
 	import { Button } from '@dorsk/tsumikit';
 	import type { Snippet } from 'svelte';
+	import { uid } from './core.ts';
 	import Glyph from './Glyph.svelte';
-	import { approach, distance, dragPull, inward, type Resolved } from './launcher.ts';
+	import {
+		type Arrow,
+		approach,
+		distance,
+		dragPull,
+		inward,
+		nudge,
+		type Resolved,
+		type Spot,
+		snapSpot,
+		spotBox,
+		spotOf,
+	} from './launcher.ts';
 
 	let {
 		launcher,
 		label,
 		title,
+		hint = '',
 		hidden = false,
 		active = false,
 		onopen,
+		onmove,
+		onreset,
 		content,
 		element = $bindable(),
 	}: {
 		launcher: Resolved;
 		label: string;
 		title: string;
+		hint?: string;
 		hidden?: boolean;
 		active?: boolean;
 		onopen: () => void;
+		onmove?: (spot: Spot) => void;
+		onreset?: () => void;
 		content?: Snippet;
 		element?: HTMLElement;
 	} = $props();
 
 	const REACH = 96;
 	const SLOP = 8;
+	const LONG_PRESS = 400;
+	const TOUCH = 32;
+	const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+	const hintId = uid();
 
 	let revealed = $state(false);
 	let pointer = $state('');
 	let near = $state(0);
+	let close = $state(false);
+	let touched = $state(false);
+	let within = $state(false);
 	let drag = $state<number | null>(null);
+	let moving = $state<{ dx: number; dy: number; spot: Spot } | null>(null);
 	let focused = $state(false);
 	let hovered = $state(false);
 	let keyboard = false;
 	let tab = $state<HTMLButtonElement>();
-	let swipe: { id: number; x: number; y: number; from: number } | null = null;
+	let press: {
+		id: number;
+		x: number;
+		y: number;
+		from: number;
+		swipes: boolean;
+		mode: 'pending' | 'swipe' | 'move';
+	} | null = null;
+	let hold = 0;
 	let swallow = false;
 	const tucked = $derived(launcher.form !== 'floating');
+	const movable = $derived(launcher.movable && !!onmove);
 	const iconOnly = $derived(!label || launcher.look === 'icon');
 	const variant = $derived(launcher.look === 'button' ? 'primary' : 'default');
 	const dir = $derived(inward(launcher));
-	const shown = $derived(revealed || active || focused);
+	const shown = $derived(revealed || active || focused || moving !== null);
+	const pull = $derived(drag ?? (tucked && !revealed && !active ? near : 0));
+	const raised = $derived(shown || close || touched || within || hovered || drag !== null);
+	const offset = $derived(launcher.form === 'edge' ? launcher.offset : undefined);
+	const upright = $derived(
+		launcher.form === 'edge' && (launcher.side === 'left' || launcher.side === 'right'),
+	);
 	const phase = $derived.by(() => {
 		if (!tucked) return 'out';
 		if (drag !== null) return drag > 0 ? 'peek' : 'tucked';
 		if (shown || (hovered && pointer !== 'touch')) return 'out';
-		return near > 0 ? 'peek' : 'tucked';
+		return pull > 0 ? 'peek' : 'tucked';
 	});
 
-	function onclick() {
+	const viewport = () => ({
+		width: document.documentElement.clientWidth,
+		height: document.documentElement.clientHeight,
+	});
+	const size = () => ({ width: element?.offsetWidth ?? 0, height: element?.offsetHeight ?? 0 });
+	const preview = $derived(moving && spotBox(moving.spot, size(), viewport()));
+
+	function onclick(event: MouseEvent) {
 		if (swallow) {
 			swallow = false;
 			return;
 		}
+		if (movable && event.detail > 1 && pointer !== 'touch') return;
 		if (tucked && pointer === 'touch' && !revealed && !active) {
 			revealed = true;
 			return;
@@ -62,25 +112,92 @@
 		onopen();
 	}
 
+	function ondblclick() {
+		if (movable && pointer !== 'touch') onreset?.();
+	}
+
+	function onkeydown(event: KeyboardEvent) {
+		if (!movable || !event.altKey || !ARROWS.includes(event.key) || !element) return;
+		event.preventDefault();
+		const from = spotOf(launcher, element.getBoundingClientRect());
+		onmove?.(nudge(from, event.key as Arrow, viewport(), size()));
+	}
+
+	function begin(x: number, y: number) {
+		if (!press) return;
+		clearTimeout(hold);
+		press.mode = 'move';
+		moving = {
+			dx: x - press.x,
+			dy: y - press.y,
+			spot: snapSpot(launcher.form, x, y, viewport(), size()),
+		};
+	}
+
 	function ondown(event: PointerEvent) {
 		pointer = event.pointerType;
 		swallow = false;
-		if (!tucked || active || event.pointerType !== 'touch') return;
-		swipe = { id: event.pointerId, x: event.clientX, y: event.clientY, from: revealed ? 1 : 0 };
+		if (active || event.button !== 0) return;
+		const swipes = tucked && event.pointerType === 'touch';
+		if (!swipes && !movable) return;
+		press = {
+			id: event.pointerId,
+			x: event.clientX,
+			y: event.clientY,
+			from: revealed ? 1 : 0,
+			swipes,
+			mode: 'pending',
+		};
+		try {
+			(event.target as Element).setPointerCapture(event.pointerId);
+		} catch {}
+		clearTimeout(hold);
+		if (event.pointerType === 'touch' && movable) {
+			const { clientX, clientY } = event;
+			hold = window.setTimeout(() => {
+				if (press?.mode === 'pending') begin(clientX, clientY);
+			}, LONG_PRESS);
+		}
 	}
 
-	function onmove(event: PointerEvent) {
-		if (!swipe || event.pointerId !== swipe.id || !tab) return;
-		const dx = event.clientX - swipe.x;
-		const dy = event.clientY - swipe.y;
-		if (drag === null && Math.hypot(dx, dy) < SLOP) return;
+	function onmovepointer(event: PointerEvent) {
+		if (!press || event.pointerId !== press.id) return;
+		const dx = event.clientX - press.x;
+		const dy = event.clientY - press.y;
+		if (press.mode === 'pending') {
+			const length = Math.hypot(dx, dy);
+			if (length < SLOP) return;
+			clearTimeout(hold);
+			const inwardish = Math.abs(dx * dir.x + dy * dir.y) >= Math.SQRT1_2 * length;
+			press.mode = press.swipes && (inwardish || !movable) ? 'swipe' : 'move';
+			if (press.mode === 'move') begin(event.clientX, event.clientY);
+		}
+		if (press.mode === 'move') {
+			moving = {
+				dx,
+				dy,
+				spot: snapSpot(launcher.form, event.clientX, event.clientY, viewport(), size()),
+			};
+			return;
+		}
+		if (!tab) return;
 		const travel = Math.abs(dir.x) * tab.offsetWidth + Math.abs(dir.y) * tab.offsetHeight;
-		drag = dragPull(swipe.from, dx, dy, dir, travel);
+		drag = dragPull(press.from, dx, dy, dir, travel);
 	}
 
 	function onup(event: PointerEvent) {
-		if (!swipe || event.pointerId !== swipe.id) return;
-		swipe = null;
+		if (!press || event.pointerId !== press.id) return;
+		clearTimeout(hold);
+		const { mode } = press;
+		press = null;
+		if (mode === 'move' && moving) {
+			const { spot, dx, dy } = moving;
+			moving = null;
+			swallow = true;
+			revealed = false;
+			if (event.type === 'pointerup' && Math.hypot(dx, dy) >= SLOP) onmove?.(spot);
+			return;
+		}
 		if (drag === null) return;
 		revealed = drag > 0.5;
 		if (!revealed) tab?.blur();
@@ -88,17 +205,21 @@
 		swallow = true;
 	}
 
+	$effect(() => () => clearTimeout(hold));
+
+	const gap = (x: number, y: number) => {
+		const box = element?.getBoundingClientRect();
+		return box ? distance(box, x, y) : Infinity;
+	};
+
 	$effect(() => {
-		if (!tucked || revealed || active) {
-			near = 0;
-			return;
-		}
 		let frame = 0;
 		let at = { x: 0, y: 0 };
 		const measure = () => {
 			frame = 0;
-			const box = element?.getBoundingClientRect();
-			if (box) near = approach(distance(box, at.x, at.y), REACH);
+			const d = gap(at.x, at.y);
+			near = approach(d, REACH);
+			close = d < REACH;
 		};
 		const move = (event: PointerEvent) => {
 			if (event.pointerType === 'touch') return;
@@ -106,7 +227,9 @@
 			frame ||= requestAnimationFrame(measure);
 		};
 		const out = (event: PointerEvent) => {
-			if (!event.relatedTarget) near = 0;
+			if (event.relatedTarget) return;
+			near = 0;
+			close = false;
 		};
 		document.addEventListener('pointermove', move, { passive: true });
 		document.addEventListener('pointerout', out);
@@ -119,7 +242,12 @@
 
 	$effect(() => {
 		const key = () => (keyboard = true);
-		const point = () => (keyboard = false);
+		const point = (event: PointerEvent) => {
+			keyboard = false;
+			if (event.pointerType !== 'touch') return;
+			touched = gap(event.clientX, event.clientY) < TOUCH;
+			if (touched) pointer = 'touch';
+		};
 		document.addEventListener('keydown', key, true);
 		document.addEventListener('pointerdown', point, true);
 		return () => {
@@ -129,7 +257,9 @@
 	});
 
 	function onfocusout(event: FocusEvent) {
-		if (!element?.contains(event.relatedTarget as Node)) focused = false;
+		if (element?.contains(event.relatedTarget as Node)) return;
+		focused = false;
+		within = false;
 	}
 
 	$effect(() => {
@@ -151,29 +281,63 @@
 	{/if}
 {/snippet}
 
+{#if preview}
+	<div
+		class="preview"
+		aria-hidden="true"
+		data-id="launcher-preview"
+		style:left="{preview.left}px"
+		style:top="{preview.top}px"
+		style:width="{preview.right - preview.left}px"
+		style:height="{preview.bottom - preview.top}px"
+	></div>
+{/if}
+
 <div
 	bind:this={element}
 	class="launcher {launcher.form}"
 	class:shown
 	class:dragging={drag !== null}
+	class:moving={moving !== null}
+	class:movable
 	class:touch={pointer === 'touch'}
 	class:hidden
-	style:--pull={drag ?? near}
+	class:raised
+	style:--pull={pull}
+	style:transform={moving ? `translate(${moving.dx}px, ${moving.dy}px)` : undefined}
+	style:top={offset !== undefined && upright ? `${offset}px` : undefined}
+	style:bottom={offset !== undefined && upright ? 'auto' : undefined}
+	style:left={offset !== undefined && !upright ? `${offset}px` : undefined}
+	style:right={offset !== undefined && !upright ? 'auto' : undefined}
+	style:translate={offset === undefined ? undefined : upright ? '0 -50%' : '-50% 0'}
 	inert={hidden}
 	role="presentation"
-	onfocusin={() => (focused = keyboard)}
+	onfocusin={() => {
+		focused = keyboard;
+		within = true;
+	}}
 	{onfocusout}
 	onpointerover={(event) => (hovered = event.pointerType !== 'touch')}
 	onpointerout={(event) => {
 		if (!element?.contains(event.relatedTarget as Node)) hovered = false;
 	}}
+	onpointerdown={ondown}
+	onpointermove={onmovepointer}
+	onpointerup={onup}
+	onpointercancel={onup}
+	oncontextmenu={(event) => {
+		if (moving) event.preventDefault();
+	}}
 	data-hmm-launcher={launcher.form}
 	data-state={phase}
+	data-movable={movable ? '' : undefined}
 	data-anchor={launcher.form === 'floating' ? launcher.anchor : undefined}
 	data-side={launcher.form === 'edge' ? launcher.side : undefined}
 	data-align={launcher.form === 'edge' ? launcher.align : undefined}
+	data-offset={offset === undefined ? undefined : Math.round(offset)}
 	data-corner={launcher.form === 'corner' ? launcher.corner : undefined}
 >
+	{#if movable && hint}<span class="move-hint" id={hintId}>{hint}</span>{/if}
 	{#if launcher.form === 'floating'}
 		<Button
 			pill={launcher.look !== 'button'}
@@ -181,23 +345,16 @@
 			{variant}
 			{title}
 			aria-label={iconOnly ? title : undefined}
+			aria-describedby={movable && hint ? hintId : undefined}
 			data-id="launcher"
 			{onclick}
+			{ondblclick}
+			{onkeydown}
 		>
 			{@render face()}
 		</Button>
 	{:else}
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div
-			class="zone"
-			aria-hidden="true"
-			data-id="launcher-zone"
-			onpointerdown={ondown}
-			onpointermove={onmove}
-			onpointerup={onup}
-			onpointercancel={onup}
-			{onclick}
-		></div>
+		<div class="zone" aria-hidden="true" data-id="launcher-zone" {onclick}></div>
 		<!-- tsumikit-lint-ignore no-raw-control -->
 		<button
 			type="button"
@@ -205,13 +362,12 @@
 			class:primary={launcher.look === 'button' || launcher.form === 'corner'}
 			{title}
 			aria-label={iconOnly ? title : undefined}
+			aria-describedby={movable && hint ? hintId : undefined}
 			data-id="launcher"
 			bind:this={tab}
-			onpointerdown={ondown}
-			onpointermove={onmove}
-			onpointerup={onup}
-			onpointercancel={onup}
 			{onclick}
+			{ondblclick}
+			{onkeydown}
 		>
 			{#if launcher.form === 'edge'}<span class="grip"></span>{/if}
 			{@render face()}
@@ -238,6 +394,35 @@
 	}
 	.hidden {
 		visibility: hidden;
+	}
+	.move-hint {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	.movable.floating > :global(*) {
+		touch-action: none;
+	}
+	.raised {
+		z-index: var(--z-top);
+	}
+	.moving {
+		cursor: grabbing;
+	}
+	.moving .tab {
+		transition: none;
+		cursor: grabbing;
+	}
+	.preview {
+		position: fixed;
+		z-index: var(--z-top);
+		border: 2px dashed var(--accent);
+		border-radius: var(--r-lg);
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		pointer-events: none;
 	}
 
 	.floating[data-anchor^='top'] {

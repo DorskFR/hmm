@@ -35,6 +35,7 @@ export {
 	type Look,
 	SIDES,
 	type Side,
+	type Spot,
 } from './launcher.ts';
 export { redactEnvelope, redactText, redactUrl } from './redact.ts';
 export { httpTransport, SendError, type Transport } from './transport.ts';
