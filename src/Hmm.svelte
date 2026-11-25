@@ -33,8 +33,19 @@
 	} from './envelope.ts';
 	import { describeElement, labelOf } from './inspect.ts';
 	import Launcher from './Launcher.svelte';
-	import { type Corner, type Placement, panelOrigin, placementFor, resolveLauncher } from './launcher.ts';
+	import {
+		type Anchor,
+		type Corner,
+		fitSpot,
+		moveTo,
+		type Placement,
+		panelOrigin,
+		placementFor,
+		resolveLauncher,
+		type Spot,
+	} from './launcher.ts';
 	import { LABELS, type Labels } from './labels.ts';
+	import { loadSpot, saveSpot, spotKey } from './placement-store.ts';
 	import { elementAt } from './picker.ts';
 	import { redactEnvelope } from './redact.ts';
 	import { capture, fromFile, type Shot } from './shot.ts';
@@ -62,6 +73,26 @@
 	const draftKey = $derived(`hmm:draft:${projectKey}`);
 	const outboxKey = $derived(`hmm:outbox:${projectKey}`);
 	const resolved = $derived(resolveLauncher(launcher, position));
+	const spotStorageKey = $derived(
+		spotKey(resolved?.storageKey, globalThis.location?.origin ?? '', projectKey),
+	);
+	const screen = () =>
+		typeof document === 'undefined'
+			? { width: 0, height: 0 }
+			: {
+					width: document.documentElement.clientWidth,
+					height: document.documentElement.clientHeight,
+				};
+	let stored = $state.raw<Spot | null>(
+		untrack(() => loadSpot(storageOf(() => localStorage), spotStorageKey)),
+	);
+	let viewport = $state.raw(screen());
+	let launcherSize = $state.raw({ width: 0, height: 0 });
+	let status = $state('');
+	const userSpot = $derived(
+		stored && resolved?.movable ? fitSpot(stored, resolved, viewport, launcherSize) : null,
+	);
+	const placed = $derived(resolved && moveTo(resolved, userSpot, viewport));
 
 	let host = $state<HTMLElement>();
 	let launcherEl = $state<HTMLElement>();
@@ -312,8 +343,33 @@
 		void tick().then(() => back?.focus());
 	}
 
+	const PLACES: Record<Anchor, keyof Labels> = {
+		top: 'placeTop',
+		bottom: 'placeBottom',
+		left: 'placeLeft',
+		right: 'placeRight',
+		'top-left': 'placeTopLeft',
+		'top-right': 'placeTopRight',
+		'bottom-left': 'placeBottomLeft',
+		'bottom-right': 'placeBottomRight',
+	};
+
+	function placeName(spot: Spot) {
+		if (spot.form === 'floating') return L[PLACES[spot.anchor]];
+		if (spot.form === 'corner') return L[PLACES[spot.corner]];
+		const span = spot.side === 'left' || spot.side === 'right' ? viewport.height : viewport.width;
+		return `${L[PLACES[spot.side]]} ${Math.round((100 * spot.offset) / Math.max(1, span))}%`;
+	}
+
+	function relocate(spot: Spot | null) {
+		stored = spot;
+		saveSpot(local, spotStorageKey, spot);
+		status = spot ? L.moved.replace('{place}', placeName(spot)) : L.moveReset;
+		if (open) void tick().then(place);
+	}
+
 	function placement(): Placement {
-		if (!at && resolved && launcherEl) return placementFor(resolved, launcherEl.getBoundingClientRect());
+		if (!at && placed && launcherEl) return placementFor(placed, launcherEl.getBoundingClientRect());
 		return { mode: 'corner', corner: at ?? (position === 'bottom-left' ? 'bottom-left' : 'bottom-right') };
 	}
 
@@ -375,6 +431,23 @@
 	});
 
 	$effect(placePins);
+
+	$effect(() => {
+		if (!launcherEl) return;
+		const el = launcherEl;
+		const measure = () => {
+			viewport = screen();
+			launcherSize = { width: el.offsetWidth, height: el.offsetHeight };
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		addEventListener('resize', measure);
+		return () => {
+			observer.disconnect();
+			removeEventListener('resize', measure);
+		};
+	});
 
 	$effect(() => {
 		if (!panelEl) return;
@@ -458,15 +531,18 @@
 		role="presentation"
 		onkeydown={onKey}
 	>
-		{#if resolved}
+		{#if placed}
 			<Launcher
-				launcher={resolved}
+				launcher={placed}
 				label={L.launcher}
 				title={L.title}
-				hidden={picking || (open && resolved.form === 'floating')}
+				hint={L.moveHint}
+				hidden={picking || (open && placed.form === 'floating')}
 				active={open}
 				content={launcherContent}
 				onopen={() => (open ? hide() : show())}
+				onmove={relocate}
+				onreset={() => relocate(null)}
 				bind:element={launcherEl}
 			/>
 		{/if}
@@ -497,7 +573,17 @@
 								</Text>
 							{/if}
 						</Stack>
-						<IconButton icon="x" label={L.close} data-id="close" onclick={hide} />
+						<Cluster gap="var(--sp-1)" wrap={false}>
+							{#if userSpot}
+								<IconButton
+									icon="retry"
+									label={L.resetPosition}
+									data-id="reset-launcher"
+									onclick={() => relocate(null)}
+								/>
+							{/if}
+							<IconButton icon="x" label={L.close} data-id="close" onclick={hide} />
+						</Cluster>
 					</header>
 
 					{#if view === 'review' && pending}
@@ -658,6 +744,8 @@
 			</div>
 		{/if}
 
+		<div class="status" aria-live="polite" aria-atomic="true" data-id="launcher-status">{status}</div>
+
 		<div aria-hidden="true">
 			{#each pins as pin (pin.n)}
 				<div class="pin" style:transform="translate({pin.x}px, {pin.y}px)">
@@ -768,6 +856,14 @@
 		background: var(--surface);
 		box-shadow: var(--shadow-md);
 		pointer-events: none;
+	}
+	.status {
+		position: fixed;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	.glass {
 		position: fixed;

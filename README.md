@@ -114,6 +114,27 @@ as the mouse comes near and can be swiped out of the corner like the edge tab.
 
 A `launcherContent` snippet replaces the icon and label inside any of the three.
 
+**Moving it**: users can drag any of the three to another spot. On release it snaps to the nearest
+place for its form: anywhere along any edge for an edge tab, the nearest corner for a corner
+bubble, one of the eight anchors for a floating launcher. A dashed outline shows the target while
+dragging. A click or tap still opens the panel. On touch, swiping inward still pulls a tab out;
+dragging along the edge, or a long press then a drag, moves it. With keyboard focus on the
+launcher, Alt and an arrow key move it (an edge tab walks along its edge and turns the corner at
+its ends), and the new place is announced to screen readers.
+
+The spot is remembered in `localStorage` under `hmm:launcher:<origin>:<projectKey>`, or under
+`storageKey` when the app sets one, and comes back in later sessions. A stored edge position is
+clamped back onto a smaller screen; a value that is invalid or meant for another form is ignored,
+so the app's configuration stays the default. Double-clicking the launcher, or the reset button
+in the panel header (shown while the launcher is moved), clears it.
+
+```svelte
+<Hmm … launcher={{ form: 'edge', side: 'right', storageKey: 'my-app:hmm-launcher' }} />
+<Hmm … launcher={{ form: 'corner', corner: 'bottom-right', movable: false }} />
+```
+
+`movable: false` locks the launcher where the app put it and ignores any stored spot.
+
 **Your own button**: set `launcher={false}` and open the panel from anywhere in the app, inside or
 outside the component that renders `<Hmm>`.
 

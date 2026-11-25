@@ -35,6 +35,7 @@ test('the 0.1 options keep their meaning', () => {
 		form: 'floating',
 		anchor: 'bottom-right',
 		look: 'pill',
+		movable: true,
 	});
 	expect(resolveLauncher(true, 'bottom-left')).toMatchObject({ anchor: 'bottom-left' });
 	expect(resolveLauncher(false)).toBeNull();
@@ -46,6 +47,7 @@ test('launcher options get defaults and reject unknown values', () => {
 		side: 'left',
 		align: 'center',
 		look: 'pill',
+		movable: true,
 	});
 	expect(resolveLauncher({ form: 'corner', corner: 'top-left' })).toMatchObject({ look: 'pill' });
 	expect(() => resolveLauncher({ form: 'edge', side: 'middle' } as unknown as Launcher)).toThrow(

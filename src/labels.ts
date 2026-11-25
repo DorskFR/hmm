@@ -36,6 +36,18 @@ export const LABELS = {
 	uploadFailed: 'This image could not be read.',
 	full: 'You have reached the maximum for one report.',
 	done: 'Done',
+	moveHint: 'Drag it, or press Alt and an arrow key, to move it. Double-click puts it back.',
+	moved: 'Moved: {place}',
+	moveReset: 'Back to its default place',
+	resetPosition: 'Reset the button position',
+	placeTop: 'top',
+	placeBottom: 'bottom',
+	placeLeft: 'left',
+	placeRight: 'right',
+	placeTopLeft: 'top left',
+	placeTopRight: 'top right',
+	placeBottomLeft: 'bottom left',
+	placeBottomRight: 'bottom right',
 };
 
 export type Labels = typeof LABELS;
@@ -78,4 +90,17 @@ export const LABELS_FR: Labels = {
 	uploadFailed: "Cette image n'a pas pu être lue.",
 	full: 'Vous avez atteint le maximum pour un seul retour.',
 	done: 'Terminé',
+	moveHint:
+		'Faites-le glisser, ou appuyez sur Alt et une flèche, pour le déplacer. Un double-clic le remet en place.',
+	moved: 'Déplacé : {place}',
+	moveReset: 'Remis à sa place par défaut',
+	resetPosition: 'Remettre le bouton à sa place',
+	placeTop: 'en haut',
+	placeBottom: 'en bas',
+	placeLeft: 'à gauche',
+	placeRight: 'à droite',
+	placeTopLeft: 'en haut à gauche',
+	placeTopRight: 'en haut à droite',
+	placeBottomLeft: 'en bas à gauche',
+	placeBottomRight: 'en bas à droite',
 };

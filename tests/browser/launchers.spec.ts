@@ -228,6 +228,154 @@ test('HmmTrigger and the hmm controller open the panel from anywhere', async ({ 
 	await expect(panel).toHaveCount(0);
 });
 
+const center = async (locator: Locator) => {
+	const r = await rect(locator);
+	return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
+};
+const dragTo = async (page: Page, locator: Locator, x: number, y: number) => {
+	const from = await center(locator);
+	await page.mouse.move(from.x, from.y);
+	await page.mouse.down();
+	for (let i = 1; i <= 10; i++)
+		await page.mouse.move(from.x + ((x - from.x) * i) / 10, from.y + ((y - from.y) * i) / 10);
+	await page.mouse.up();
+};
+const launcherRoot = (page: Page) => page.locator('[data-hmm-launcher]');
+
+test('an edge tab dragged to the left edge stays there after a reload', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'right', align: 'center' });
+	const tab = part(page, 'launcher');
+	await tab.hover({ position: { x: 3, y: 10 }, force: true });
+	await dragTo(page, tab, 4, 200);
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'left');
+	await expect(part(page, 'panel')).toHaveCount(0);
+	await expect(part(page, 'launcher-status')).toContainText('left');
+	const top = (await center(tab)).y;
+	expect(Math.abs(top - 200)).toBeLessThan(4);
+
+	await page.reload();
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'left');
+	expect(Math.abs((await center(tab)).y - 200)).toBeLessThan(4);
+	await expect.poll(async () => (await rect(tab)).right).toBeLessThan(12);
+});
+
+test('a drag shows where the launcher will land', async ({ page }) => {
+	await open(page, { form: 'corner', corner: 'bottom-right' });
+	const bubble = part(page, 'launcher');
+	const { width, height } = viewport(page);
+	await page.mouse.move(width - 90, height - 40);
+	const from = await center(bubble);
+	await page.mouse.move(from.x, from.y);
+	await page.mouse.down();
+	await page.mouse.move(from.x - 100, from.y - 100);
+	await page.mouse.move(100, 100);
+	const preview = await rect(part(page, 'launcher-preview'));
+	expect(preview.left).toBe(0);
+	expect(preview.top).toBe(0);
+	await page.mouse.up();
+	await expect(part(page, 'launcher-preview')).toHaveCount(0);
+	await expect(launcherRoot(page)).toHaveAttribute('data-corner', 'top-left');
+});
+
+test('a click on a moved tab still opens the panel beside it', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'right', align: 'end' });
+	const tab = part(page, 'launcher');
+	await tab.hover({ position: { x: 3, y: 10 }, force: true });
+	await dragTo(page, tab, 4, 300);
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'left');
+	await tab.click();
+	const panel = part(page, 'panel');
+	await expect(panel).toBeVisible();
+	const [p, t] = [await rect(panel), await rect(tab)];
+	expect(p.left).toBeGreaterThanOrEqual(t.right);
+});
+
+test('a floating launcher snaps to another anchor', async ({ page }) => {
+	await open(page, { form: 'floating', anchor: 'bottom-right' });
+	await dragTo(page, part(page, 'launcher'), 40, 40);
+	await expect(launcherRoot(page)).toHaveAttribute('data-anchor', 'top-left');
+	await part(page, 'launcher').click();
+	expect((await rect(part(page, 'panel'))).top).toBeLessThan(100);
+});
+
+test('a launcher with movable: false stays put', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'right', align: 'center', movable: false });
+	const tab = part(page, 'launcher');
+	await tab.hover({ position: { x: 3, y: 10 }, force: true });
+	await dragTo(page, tab, 4, 200);
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'right');
+	await tab.focus();
+	await page.keyboard.press('Alt+ArrowLeft');
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'right');
+	await page.reload();
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'right');
+});
+
+test('a double-click or the panel button puts the launcher back', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'right', align: 'center' });
+	const tab = part(page, 'launcher');
+	await tab.hover({ position: { x: 3, y: 10 }, force: true });
+	await dragTo(page, tab, 4, 200);
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'left');
+	await tab.dblclick();
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'right');
+	await expect(launcherRoot(page)).not.toHaveAttribute('data-offset', /.*/);
+	await expect(part(page, 'launcher-status')).toHaveText('Back to its default place');
+	await page.reload();
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'right');
+
+	await tab.hover({ position: { x: 3, y: 10 }, force: true });
+	await dragTo(page, tab, 600, 4);
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'top');
+	await tab.click();
+	await part(page, 'reset-launcher').click();
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'right');
+	await expect(part(page, 'reset-launcher')).toHaveCount(0);
+	const [p, t] = [await rect(part(page, 'panel')), await rect(tab)];
+	expect(p.right).toBeLessThanOrEqual(t.left);
+});
+
+test('Alt and the arrow keys move a focused launcher and announce it', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'right', align: 'center' });
+	const tab = part(page, 'launcher');
+	await expect(tab).toHaveAttribute('aria-describedby', /.+/);
+	await tab.focus();
+	await page.keyboard.press('Alt+ArrowUp');
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'right');
+	await expect(launcherRoot(page)).toHaveAttribute('data-offset', '320');
+	await expect(part(page, 'launcher-status')).toHaveText('Moved: right 40%');
+	await page.keyboard.press('Alt+ArrowLeft');
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'left');
+	await expect(part(page, 'launcher-status')).toHaveText('Moved: left 40%');
+	await expect(part(page, 'panel')).toHaveCount(0);
+});
+
+test('a stored spot that no longer fits is clamped, and a broken one ignored', async ({ page }) => {
+	await open(page, { form: 'edge', side: 'right', align: 'center' });
+	const key = `hmm:launcher:${new URL(page.url()).origin}:launchers`;
+	await page.evaluate(
+		(k) => localStorage.setItem(k, JSON.stringify({ form: 'edge', side: 'left', offset: 5000 })),
+		key,
+	);
+	await page.reload();
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'left');
+	expect((await rect(part(page, 'launcher'))).bottom).toBeLessThanOrEqual(viewport(page).height);
+	await page.evaluate((k) => localStorage.setItem(k, '{"form":"edge","side":"nowhere"}'), key);
+	await page.reload();
+	await expect(launcherRoot(page)).toHaveAttribute('data-side', 'right');
+});
+
+test('an app storageKey keeps its own spot', async ({ page }) => {
+	await open(page, { form: 'corner', corner: 'bottom-right', storageKey: 'my-app:hmm' });
+	const bubble = part(page, 'launcher');
+	await bubble.focus();
+	await page.keyboard.press('Alt+ArrowUp');
+	await expect(launcherRoot(page)).toHaveAttribute('data-corner', 'top-right');
+	expect(await page.evaluate(() => localStorage.getItem('my-app:hmm'))).toBe(
+		'{"form":"corner","corner":"top-right"}',
+	);
+});
+
 test.describe('on a touch screen', () => {
 	test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 760 } });
 
@@ -293,6 +441,23 @@ test.describe('on a touch screen', () => {
 		await swipe(page, [s.left + 10, mid], [width - 2, mid]);
 		await expect.poll(() => visibleWidth(page, tab)).toBeLessThan(12);
 		await expect(part(page, 'panel')).toHaveCount(0);
+	});
+
+	test('a swipe along the edge moves the tab instead of pulling it out', async ({ page }) => {
+		await open(page, { form: 'edge', side: 'right', align: 'end' });
+		const zone = await rect(part(page, 'launcher-zone'));
+		const { width } = viewport(page);
+		await swipe(page, [width - 6, zone.top + 4], [width - 6, 200]);
+		const root = page.locator('[data-hmm-launcher]');
+		await expect(root).toHaveAttribute('data-side', 'right');
+		await expect(root).toHaveAttribute('data-offset', /^(19\d|20\d|21\d)$/);
+		await expect(part(page, 'panel')).toHaveCount(0);
+
+		const tab = part(page, 'launcher');
+		const r = await rect(tab);
+		await swipe(page, [width - 6, (r.top + r.bottom) / 2], [width - 120, (r.top + r.bottom) / 2]);
+		await expect.poll(() => visibleWidth(page, tab)).toBeGreaterThan(60);
+		await expect(root).toHaveAttribute('data-side', 'right');
 	});
 
 	test('a short swipe springs back', async ({ page }) => {
