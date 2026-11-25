@@ -232,7 +232,22 @@ const center = async (locator: Locator) => {
 	const r = await rect(locator);
 	return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
 };
+const settled = async (locator: Locator) => {
+	let last = '';
+	await expect
+		.poll(
+			async () => {
+				const now = JSON.stringify(await locator.boundingBox());
+				const same = now === last;
+				last = now;
+				return same;
+			},
+			{ intervals: [100] },
+		)
+		.toBe(true);
+};
 const dragTo = async (page: Page, locator: Locator, x: number, y: number) => {
+	await settled(locator);
 	const from = await center(locator);
 	await page.mouse.move(from.x, from.y);
 	await page.mouse.down();

@@ -33,6 +33,21 @@ const strip = async (page: Page) => {
 	return { x: box.x + 4, y: box.y + box.height / 2 };
 };
 
+const settled = async (page: Page) => {
+	let last = '';
+	await expect
+		.poll(
+			async () => {
+				const now = JSON.stringify(await part(page, 'launcher').boundingBox());
+				const same = now === last;
+				last = now;
+				return same;
+			},
+			{ intervals: [100] },
+		)
+		.toBe(true);
+};
+
 const hit = (page: Page, x: number, y: number) =>
 	page.evaluate(
 		([x, y]) => {
@@ -194,6 +209,7 @@ test.describe('on a touch screen', () => {
 		await expect(page.locator('[data-hmm-launcher]')).toHaveAttribute('data-state', 'out');
 		await expect(part(page, 'panel')).toHaveCount(0);
 		await expect.poll(() => hit(page, x, y)).toBe('launcher');
+		await settled(page);
 		const out = await strip(page);
 		await page.touchscreen.tap(out.x + 20, out.y);
 		await expect(part(page, 'panel')).toBeVisible();
