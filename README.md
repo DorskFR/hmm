@@ -1,3 +1,5 @@
+<img src="docs/assets/icon.svg" width="64" height="64" alt="">
+
 # @dorsk/hmm
 
 A feedback panel for Svelte 5 apps built on [tsumikit](https://github.com/DorskFR/tsumikit). The
