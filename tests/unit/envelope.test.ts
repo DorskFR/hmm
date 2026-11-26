@@ -124,3 +124,42 @@ test('rejects values that are not objects', () => {
 	for (const value of [null, 'text', 42, [], undefined])
 		expect(validateEnvelope(value as unknown as Envelope).ok).toBe(false);
 });
+
+test('rejects script URLs in page.url and item URLs, however they are spelled', () => {
+	for (const url of [
+		'javascript:alert(1)',
+		'JaVaScRiPt:x',
+		' \tjava\nscript:x',
+		'\u0000\u001f javascript:x',
+		'data:text/html,x',
+		'VBScript:x',
+	]) {
+		const page = validateEnvelope(mutate((e) => (e.page.url = url)));
+		expect(page).toEqual({
+			ok: false,
+			errors: ['envelope.page.url: javascript:, data: and vbscript: URLs are not allowed'],
+		});
+		const item = validateEnvelope(mutate((e) => (e.items[1].url = url)));
+		expect(item).toEqual({
+			ok: false,
+			errors: ['envelope.items[1].url: javascript:, data: and vbscript: URLs are not allowed'],
+		});
+	}
+});
+
+test('accepts every other page and item URL', () => {
+	for (const url of [
+		'https://example.com/a',
+		'http://localhost:4188/',
+		'capacitor://localhost/x',
+		'file:///x',
+		'app://x',
+		'/relative',
+		'',
+		'javascript',
+		'java script:x',
+	]) {
+		expect(validateEnvelope(mutate((e) => (e.page.url = url))).ok).toBe(true);
+		expect(validateEnvelope(mutate((e) => (e.items[0].url = url))).ok).toBe(true);
+	}
+});

@@ -22,6 +22,32 @@ test('redacts tokens, keys and credentials in free text', () => {
 	for (const [input, expected] of cases) expect(redactText(input)).toBe(expected);
 });
 
+test('redacts the value of a form field with a secret-looking name', () => {
+	const cases: [string, string][] = [
+		[
+			'<input type="hidden" name="csrfmiddlewaretoken" value="AbC123xyz">',
+			'<input type="hidden" name="csrfmiddlewaretoken" value="[redacted]">',
+		],
+		[
+			'<input name="authenticity_token" type="hidden" value="Zm9vYmFy/+=">',
+			'<input name="authenticity_token" type="hidden" value="[redacted]">',
+		],
+		["<input name='_csrf' value='s3cr3t'>", "<input name='_csrf' value='[redacted]'>"],
+		[
+			'<input name=__RequestVerificationToken value=CfDJ8abc>',
+			'<input name=__RequestVerificationToken value=[redacted]>',
+		],
+	];
+	for (const [input, expected] of cases) {
+		expect(redactText(input)).toBe(expected);
+		expect(redactText(expected)).toBe(expected);
+	}
+	const search = '<input name="q" value="shoes"><input name="email" value="a@b.c">';
+	expect(redactText(search)).toBe(search);
+	const split = '<input name="csrf_token"><input name="q" value="shoes">';
+	expect(redactText(split)).toBe(split);
+});
+
 test('leaves ordinary text alone and is stable when applied twice', () => {
 	const plain = 'The author said the checkout button is hard to find: move it up, please.';
 	expect(redactText(plain)).toBe(plain);

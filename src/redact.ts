@@ -18,12 +18,17 @@ const RULES: [RegExp, string][] = [
 	],
 ];
 
+const SECRET_FIELD_VALUE =
+	/(\bname\s*=\s*["']?[\w.:-]*(?:token|csrf|secret|pass|key|auth|session)[\w.:-]*["']?[^<>]*?\bvalue\s*=\s*["']?)([^"'\s<>]+)/gi;
+
 const SECRET_PARAM = /token|key|secret|pass|code|sig|auth|session/i;
 
 export function redactText(text: string): string {
 	let out = text;
 	for (const [pattern, replacement] of RULES) out = out.replace(pattern, replacement);
-	return out;
+	return out.replace(SECRET_FIELD_VALUE, (all, head: string, value: string) =>
+		value.startsWith('[redacted') ? all : `${head}[redacted]`,
+	);
 }
 
 export function redactUrl(url: string): string {
