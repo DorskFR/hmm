@@ -58,7 +58,7 @@ instance. Unlike the component, `init` throws on invalid options.
 tokens inside. It exposes `Hmm.init`, `Hmm.hmm`, `Hmm.LABELS`, `Hmm.LABELS_FR` and `Hmm.VERSION`:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.8.1/dist/standalone/hmm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.9.0/dist/standalone/hmm.js"></script>
 <script>
 	Hmm.init({ projectKey: 'my-app', endpoint: 'https://feedback.example.com' });
 </script>
@@ -343,16 +343,19 @@ if (!result.ok) return reject(result.errors);
 ```
 
 Treat every field as untrusted input. The validator checks structure and size only; it does not
-make the text safe to render or to hand to an agent, and it does not decode the images.
+make the text safe to render or to hand to an agent, and it does not decode the images. It does
+reject a `page.url` or item `url` with a `javascript:`, `data:` or `vbscript:` scheme (read the way
+a browser reads an `href`), so render other URLs as links only after checking their scheme too.
 
 ## Privacy
 
 - Nothing leaves the page until the user presses Send on the review screen, which lists every
   field and image, with the raw JSON one click away.
 - Before the review, all text is scrubbed of JWTs, bearer tokens, common API key formats, private
-  keys and `password=`-style pairs. URLs lose their credentials and secret-looking query
-  parameters. `redactText`, `redactUrl` and `redactEnvelope` are exported.
-- The HTML of an element is not recorded when it is, or contains, a password field.
+  keys, `password=`-style pairs and the `value` of form fields with a secret-looking `name`. URLs
+  lose their credentials and secret-looking query parameters. `redactText`, `redactUrl` and `redactEnvelope` are exported.
+- The HTML of an element leaves out hidden inputs, input and option values and textarea
+  contents. It is not recorded at all when the element is, or contains, a password or card field.
 - Screenshots and added images cannot be scrubbed. They are shown in the review and each one can be removed.
 
 ## Limitations

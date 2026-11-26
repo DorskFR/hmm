@@ -149,6 +149,25 @@ class Check {
 
 const COORD = 1_000_000;
 
+const SCRIPT_SCHEMES = new Set(['javascript', 'data', 'vbscript']);
+const SCHEME = /^[A-Za-z0-9+.-]+$/;
+
+function schemeOf(url: string): string {
+	let i = 0;
+	const clean = url.replace(/[\t\n\r]/g, '');
+	while (i < clean.length && clean.charCodeAt(i) <= 0x20) i++;
+	const rest = clean.slice(i);
+	const colon = rest.indexOf(':');
+	const scheme = colon > 0 ? rest.slice(0, colon) : '';
+	return SCHEME.test(scheme) ? scheme.toLowerCase() : '';
+}
+
+function checkUrl(c: Check, value: unknown, path: string) {
+	if (!c.string(value, path, LIMITS.url)) return;
+	if (SCRIPT_SCHEMES.has(schemeOf(value)))
+		c.fail(path, 'javascript:, data: and vbscript: URLs are not allowed');
+}
+
 function checkTarget(c: Check, value: unknown, path: string) {
 	const t = c.object(value, path, ['selector', 'tag', 'text', 'html', 'attrs', 'rect'], ['source']);
 	if (!t) return;
@@ -195,7 +214,7 @@ function checkItem(c: Check, value: unknown, path: string, attachmentIds: Set<st
 			: c.object(value, path, ['id', 'type', 'url', 'comment', 'attachment']);
 	if (!item) return;
 	c.string(item.id, `${path}.id`, 64, ID);
-	c.string(item.url, `${path}.url`, LIMITS.url);
+	checkUrl(c, item.url, `${path}.url`);
 	c.string(item.comment, `${path}.comment`, LIMITS.comment);
 	if (type === 'element') checkTarget(c, item.target, `${path}.target`);
 	if ('attachment' in item && c.string(item.attachment, `${path}.attachment`, 64, ID)) {
@@ -217,7 +236,7 @@ function checkAttachment(c: Check, value: unknown, path: string) {
 function checkPage(c: Check, value: unknown, path: string) {
 	const page = c.object(value, path, ['url', 'title', 'viewport', 'userAgent', 'language']);
 	if (!page) return;
-	c.string(page.url, `${path}.url`, LIMITS.url);
+	checkUrl(c, page.url, `${path}.url`);
 	c.string(page.title, `${path}.title`, LIMITS.short);
 	c.string(page.userAgent, `${path}.userAgent`, LIMITS.short);
 	c.string(page.language, `${path}.language`, 100);

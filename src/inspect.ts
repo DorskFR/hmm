@@ -5,7 +5,7 @@ type SvelteMeta = { loc?: { file: string; line: number; column?: number } };
 const SCOPED_CLASS = /^(svelte|s)-[\w-]{5,}$/;
 const HOOK_ATTRS = ['data-testid', 'data-test'];
 const KEPT_ATTRS = ['role', 'aria-label', 'href', 'name', 'type', 'title', 'alt'];
-const SECRET_INPUT = 'input[type="password"]';
+const SECRET_FIELD = 'input[type="password" i], [autocomplete^="cc-" i]';
 
 function sourceOf(el: Element): Target['source'] {
 	for (let node: Element | null = el; node; node = node.parentElement) {
@@ -53,6 +53,21 @@ const squash = (text: string, max: number) => {
 	return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 };
 
+function safeHtml(el: Element): string {
+	if (el.matches(SECRET_FIELD) || el.querySelector(SECRET_FIELD)) return '';
+	const clone = el.cloneNode(true) as Element;
+	const all = [clone, ...clone.querySelectorAll('*')];
+	for (const node of all) {
+		const name = node.localName;
+		if (name === 'input' && node.getAttribute('type')?.trim().toLowerCase() === 'hidden') {
+			if (node === clone) return '';
+			node.remove();
+		} else if (name === 'input' || name === 'option') node.removeAttribute('value');
+		else if (name === 'textarea') node.textContent = '';
+	}
+	return squash(clone.outerHTML, 1000);
+}
+
 export function describeElement(el: Element): Target {
 	const attrs: Record<string, string> = {};
 	for (const a of [...el.attributes].slice(0, 30)) {
@@ -60,13 +75,12 @@ export function describeElement(el: Element): Target {
 			attrs[a.name] = a.value.slice(0, 200);
 	}
 	const r = el.getBoundingClientRect();
-	const secret = el.matches(SECRET_INPUT) || el.querySelector(SECRET_INPUT) !== null;
 	const target: Target = {
 		selector: selectorOf(el),
 		tag: el.localName.slice(0, 80),
 		// biome-ignore lint/performance/useDomNodeTextContent: innerText leaves out hidden text
 		text: squash((el as HTMLElement).innerText ?? el.textContent ?? '', 200),
-		html: secret ? '' : squash(el.outerHTML, 1000),
+		html: safeHtml(el),
 		attrs,
 		rect: {
 			x: Math.round(r.x),
