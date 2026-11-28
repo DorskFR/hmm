@@ -85,3 +85,12 @@ test('scrubs every string of a report except attachment data', () => {
 	expect(clean.attachments[0]?.data).toBe(PNG);
 	expect(envelope.comment).toBe('token=abcd1234');
 });
+
+test('drops NUL characters from every string and context key', () => {
+	const envelope = sample();
+	envelope.comment = 'a\0b';
+	envelope.context = { 'k\0ey': ['x\0y'] };
+	const clean = redactEnvelope(envelope);
+	expect(clean.comment).toBe('ab');
+	expect(clean.context).toEqual({ key: ['xy'] });
+});

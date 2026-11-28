@@ -60,7 +60,7 @@ instance. Unlike the component, `init` throws on invalid options.
 tokens inside. It exposes `Hmm.init`, `Hmm.hmm`, `Hmm.LABELS`, `Hmm.LABELS_FR` and `Hmm.VERSION`:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.9.0/dist/standalone/hmm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@dorsk/hmm@0.10.0/dist/standalone/hmm.js"></script>
 <script>
 	Hmm.init({ projectKey: 'my-app', endpoint: 'https://feedback.example.com' });
 </script>
@@ -326,12 +326,22 @@ x-hmm-key: <projectKey>
 ```
 
 - Any `2xx` answer counts as delivered.
-- `408`, `429`, `5xx` and network errors are retried: the report is stored in `localStorage` and
-  sent on the next page load or when the browser comes back online. At most five reports wait.
+- `408`, `429`, `5xx` and network errors are retried: the report is stored in `localStorage`
+  (`hmm:outbox:<projectKey>`) with its last error and attempt count. At most five reports wait.
+  They are retried on page load, every 30 s doubling up to 15 min while the page is open (or
+  later if the server sends `Retry-After`), when the tab becomes visible again and when the
+  browser comes back online. One failing report never holds back the others.
+- `501`, `505`, `507` (such as a full storage budget) and `508` are permanent. A plain `500` gets
+  three tries, anything else retryable ten, and a saved report is dropped after seven days.
 - Any other `4xx` is a permanent failure. The user is told the app can't send feedback (the
   `rejected` label) and keeps the draft. The console gets the status and the `error` field of a
   JSON answer such as `{ "error": "unknown project" }`, with the project key and the page origin.
-  `httpTransport` throws a `SendError` with `retryable`, `status` and `detail` (that `error` text).
+  `httpTransport` throws a `SendError` with `retryable`, `status`, `detail` (that `error` text),
+  `network` (no response at all, for example blocked by the page's Content-Security-Policy) and
+  `retryAfter`.
+- The launcher shows how many reports are waiting. "Recent reports" in the panel lists them with
+  their error, attempts and next try, with retry and discard buttons, followed by what this page
+  sent, was refused or gave up on. That history lives in memory only.
 - The server must answer the CORS preflight and allow the `content-type` and `x-hmm-key` headers.
 - No cookies or credentials are sent.
 

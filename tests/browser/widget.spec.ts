@@ -296,7 +296,10 @@ test('a stored draft that is not well formed is ignored', async ({ page }) => {
 	await expect(part(page, 'item')).toHaveCount(0);
 });
 
-test('a failed send is queued and delivered on the next visit', async ({ page, request }) => {
+test('a failed send is queued, shown with its error and retried manually', async ({
+	page,
+	request,
+}) => {
 	await page.goto('/');
 	await request.get('/__fail?n=1');
 	await part(page, 'launcher').click();
@@ -304,12 +307,142 @@ test('a failed send is queued and delivered on the next visit', async ({ page, r
 	await sendDraft(page);
 	await expect(part(page, 'message')).toContainText('saved and will be sent automatically');
 	await expect(part(page, 'result')).toContainText('Saved for later');
+	await expect(part(page, 'reason')).toHaveText('The server answered 503. unavailable');
+	await expect(part(page, 'launcher-count')).toHaveText('1');
 	expect(await received(request)).toHaveLength(0);
 
-	await page.reload();
-	await expect.poll(async () => (await received(request)).length).toBe(1);
+	await part(page, 'show-activity').click();
+	await expect(part(page, 'subtitle')).toHaveText(
+		'Reports waiting to be sent, and what this page sent.',
+	);
+	const pending = part(page, 'pending');
+	await expect(pending).toHaveCount(1);
+	await expect(pending).toContainText('sent while the server was down');
+	await expect(part(page, 'pending-meta')).toContainText('Attachments: 0');
+	await expect(part(page, 'pending-meta')).toContainText('Attempts: 1');
+	await expect(part(page, 'pending-meta')).toContainText('Next try');
+	await expect(part(page, 'pending-error')).toHaveText('The server answered 503. unavailable');
+	await expect(part(page, 'history')).toHaveAttribute('data-state', 'pending');
+
+	await part(page, 'retry').click();
+	await expect(part(page, 'pending')).toHaveCount(0);
+	await expect(part(page, 'history')).toHaveAttribute('data-state', 'sent');
+	await expect(part(page, 'history')).toContainText('Sent');
+	await expect(part(page, 'launcher-count')).toHaveCount(0);
 	expect((await received(request))[0]?.comment).toBe('sent while the server was down');
 	expect(await page.evaluate(() => localStorage.getItem('hmm:outbox:demo'))).toBeNull();
+
+	await part(page, 'back').click();
+	await expect(part(page, 'pending-note')).toHaveCount(0);
+	await expect(part(page, 'show-activity')).toHaveText('Recent reports');
+});
+
+test('a queued report is retried automatically while the page is open', async ({
+	page,
+	request,
+}) => {
+	await page.clock.install();
+	await page.goto('/');
+	await request.get('/__fail?n=1');
+	await part(page, 'launcher').click();
+	await part(page, 'comment').fill('retry me later');
+	await sendDraft(page);
+	await expect(part(page, 'result')).toContainText('Saved for later');
+	await page.clock.fastForward(29_000);
+	expect(await received(request)).toHaveLength(0);
+	await page.clock.fastForward(2_000);
+	await expect.poll(async () => (await received(request)).length).toBe(1);
+	await expect(part(page, 'launcher-count')).toHaveCount(0);
+	await expect(part(page, 'launcher-status')).toHaveText('A saved report was sent.');
+});
+
+test('a request that never reaches the server is explained and can be discarded', async ({
+	page,
+}) => {
+	await page.route('https://hmm.test/v1/reports', (route) => route.abort('blockedbyclient'));
+	await page.goto('/bare.html');
+	await page.evaluate(() =>
+		(window as any).hmm.init({ projectKey: 'blocked', endpoint: 'https://hmm.test' }),
+	);
+	await part(page, 'launcher').click();
+	await part(page, 'comment').fill('blocked by the page');
+	await sendDraft(page);
+	await expect(part(page, 'reason')).toContainText(
+		"The request never reached the server. The page's Content-Security-Policy",
+	);
+	await expect(part(page, 'reason')).toContainText('(Failed to fetch)');
+	await expect(part(page, 'launcher')).toHaveAttribute('title', /1 waiting to send/);
+
+	await part(page, 'done').click();
+	await part(page, 'launcher').click();
+	await expect(part(page, 'pending-note')).toContainText('1 waiting to send');
+	await part(page, 'pending-note').getByRole('button').click();
+	await expect(part(page, 'pending-error')).toContainText('never reached the server');
+	await part(page, 'discard-pending').click();
+	await expect(part(page, 'pending')).toHaveCount(0);
+	await expect(part(page, 'retry-all')).toHaveCount(0);
+	await expect(part(page, 'history')).toHaveAttribute('data-state', 'discarded');
+	expect(await page.evaluate(() => localStorage.getItem('hmm:outbox:blocked'))).toBeNull();
+});
+
+test('reports queued by an older version are sent on the next visit', async ({ page, request }) => {
+	await page.goto('/');
+	await page.evaluate(() => {
+		const old = {
+			v: 1,
+			id: 'legacy-1',
+			kind: 'feedback',
+			project: 'demo',
+			createdAt: '2026-11-20T10:00:00.000Z',
+			client: { name: '@dorsk/hmm', version: '0.9.0' },
+			context: {},
+			comment: 'queued by 0.9.0',
+			items: [],
+			attachments: [],
+		};
+		localStorage.setItem('hmm:outbox:demo', JSON.stringify([old]));
+	});
+	await page.reload();
+	await expect.poll(async () => (await received(request)).length).toBe(1);
+	expect((await received(request))[0]?.id).toBe('legacy-1');
+	expect(await page.evaluate(() => localStorage.getItem('hmm:outbox:demo'))).toBeNull();
+	await part(page, 'launcher').click();
+	await part(page, 'show-activity').click();
+	await expect(part(page, 'history')).toContainText('queued by 0.9.0');
+	await expect(part(page, 'history')).toHaveAttribute('data-state', 'sent');
+});
+
+test('a queued report the server later rejects is shown as rejected, not sent', async ({
+	page,
+}) => {
+	await page.goto('/bare.html');
+	await page.evaluate(() => {
+		const { init, SendError } = (window as any).hmm;
+		let calls = 0;
+		init({
+			projectKey: 'later',
+			transport: async () => {
+				calls++;
+				throw calls === 1
+					? new SendError('down', true, { status: 503 })
+					: new SendError('the server answered 507', false, {
+							status: 507,
+							detail: 'storage budget reached',
+						});
+			},
+		});
+	});
+	await part(page, 'launcher').click();
+	await part(page, 'comment').fill('too late');
+	await sendDraft(page);
+	await part(page, 'show-activity').click();
+	await part(page, 'retry-all').click();
+	await expect(part(page, 'pending')).toHaveCount(0);
+	await expect(part(page, 'history')).toHaveAttribute('data-state', 'rejected');
+	await expect(part(page, 'history-error')).toHaveText(
+		'The server answered 507. storage budget reached',
+	);
+	expect(await page.evaluate(() => localStorage.getItem('hmm:outbox:later'))).toBeNull();
 });
 
 test('a permanently rejected send keeps the draft and says so', async ({ page }) => {
