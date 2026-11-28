@@ -24,7 +24,7 @@ const SECRET_FIELD_VALUE =
 const SECRET_PARAM = /token|key|secret|pass|code|sig|auth|session/i;
 
 export function redactText(text: string): string {
-	let out = text;
+	let out = text.replaceAll('\0', '');
 	for (const [pattern, replacement] of RULES) out = out.replace(pattern, replacement);
 	return out.replace(SECRET_FIELD_VALUE, (all, head: string, value: string) =>
 		value.startsWith('[redacted') ? all : `${head}[redacted]`,
@@ -51,7 +51,9 @@ function deep(value: unknown): unknown {
 	if (typeof value === 'string') return redactText(value);
 	if (Array.isArray(value)) return value.map(deep);
 	if (typeof value === 'object' && value !== null) {
-		return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, deep(v)]));
+		return Object.fromEntries(
+			Object.entries(value).map(([k, v]) => [k.replaceAll('\0', ''), deep(v)]),
+		);
 	}
 	return value;
 }

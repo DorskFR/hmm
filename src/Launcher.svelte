@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Button } from '@dorsk/tsumikit';
+	import { Badge, Button } from '@dorsk/tsumikit';
 	import type { Snippet } from 'svelte';
 	import { uid } from './core.ts';
 	import Glyph from './Glyph.svelte';
@@ -28,6 +28,7 @@
 		onmove,
 		onreset,
 		content,
+		count = 0,
 		element = $bindable(),
 	}: {
 		launcher: Resolved;
@@ -40,6 +41,7 @@
 		onmove?: (spot: Spot) => void;
 		onreset?: () => void;
 		content?: Snippet;
+		count?: number;
 		element?: HTMLElement;
 	} = $props();
 
@@ -278,6 +280,9 @@
 	{:else}
 		<Glyph />
 		{#if !iconOnly}<span data-id="launcher-label">{label}</span>{/if}
+	{/if}
+	{#if count > 0}
+		<Badge tone="warn" size="sm" numeric aria-hidden="true" data-id="launcher-count">{count}</Badge>
 	{/if}
 {/snippet}
 

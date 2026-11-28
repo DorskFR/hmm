@@ -50,7 +50,18 @@
 	import { elementAt } from './picker.ts';
 	import { redactEnvelope } from './redact.ts';
 	import { capture, fromFile, type Shot } from './shot.ts';
-	import { enqueue, flush, isRetryable, SendError } from './transport.ts';
+	import {
+		BACKOFF_CAP,
+		discard as discardPending,
+		enqueue,
+		failureOf,
+		flush,
+		isRetryable,
+		nextDue,
+		type Pending,
+		readOutbox,
+		type SendFailure,
+	} from './transport.ts';
 	import { VERSION } from './version.ts';
 
 	let {
@@ -108,7 +119,7 @@
 
 	let ready = $state(false);
 	let draft = $state<Draft>(emptyDraft());
-	let view = $state<'edit' | 'review' | 'done'>('edit');
+	let view = $state<'edit' | 'review' | 'done' | 'activity'>('edit');
 	let busy = $state<'' | 'capture' | 'send'>('');
 	let error = $state('');
 	let message = $state('');
@@ -118,11 +129,119 @@
 	let outline = $state.raw<DOMRect | null>(null);
 	let pins = $state.raw<{ n: number; x: number; y: number }[]>([]);
 
+	type Logged = {
+		id: string;
+		at: number;
+		excerpt: string;
+		attachments: number;
+		state: 'sent' | 'rejected' | 'expired' | 'pending' | 'discarded';
+		error?: SendFailure;
+	};
+	let outbox = $state.raw<Pending[]>([]);
+	let history = $state.raw<Logged[]>([]);
+	let failure = $state.raw<SendFailure | null>(null);
+	let retrying = $state<string | null>(null);
+	let chain = Promise.resolve();
+	let timer = 0;
+	let live = false;
+
 	const empty = $derived(isEmpty(draft));
 	const rows = $derived<KeyValueRow[]>(
 		pending?.page ? [{ label: L.page, value: shortUrl(pending.page.url) }] : [],
 	);
 	const ids = { title: uid(), comment: uid(), attach: uid() };
+	const waiting = $derived(L.pendingCount.replace('{n}', String(outbox.length)));
+
+	const STATES: Record<Logged['state'], { label: keyof Labels; tone: 'ok' | 'danger' | 'warn' | 'muted' }> =
+		{
+			sent: { label: 'stateSent', tone: 'ok' },
+			rejected: { label: 'stateRejected', tone: 'danger' },
+			expired: { label: 'stateExpired', tone: 'danger' },
+			pending: { label: 'statePending', tone: 'warn' },
+			discarded: { label: 'stateDiscarded', tone: 'muted' },
+		};
+	function when(t: number) {
+		const date = new Date(t);
+		return date.toDateString() === new Date().toDateString()
+			? date.toLocaleTimeString(undefined, { timeStyle: 'medium' })
+			: date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+	}
+	const excerptOf = (e: Envelope) => e.comment || e.items.find((i) => i.comment)?.comment || '';
+
+	function failureText(f: SendFailure) {
+		if (f.network) return f.message ? `${L.errorNetwork} (${f.message})` : L.errorNetwork;
+		const head = f.status ? L.errorStatus.replace('{status}', String(f.status)) : '';
+		return [head, f.message].filter(Boolean).join(' ');
+	}
+
+	function metaOf(entry: Pending) {
+		const parts = [
+			L.queuedAt.replace('{time}', when(entry.queuedAt)),
+			L.attachments.replace('{n}', String(entry.envelope.attachments.length)),
+			L.attempts.replace('{n}', String(entry.attempts)),
+		];
+		if (entry.triedAt) parts.push(L.lastTry.replace('{time}', when(entry.triedAt)));
+		if (entry.nextAt && entry.nextAt > Date.now())
+			parts.push(L.nextTry.replace('{time}', when(entry.nextAt)));
+		return parts.join(' · ');
+	}
+
+	function note(envelope: Envelope, state: Logged['state'], error?: SendFailure) {
+		const record: Logged = {
+			id: envelope.id,
+			at: Date.now(),
+			excerpt: excerptOf(envelope),
+			attachments: envelope.attachments.length,
+			state,
+		};
+		if (error) record.error = error;
+		history = [record, ...history.filter((h) => h.id !== envelope.id)];
+	}
+
+	function refresh() {
+		outbox = local ? readOutbox(local, outboxKey) : [];
+	}
+
+	function schedule() {
+		clearTimeout(timer);
+		const due = nextDue(outbox);
+		if (!live || due === null) return;
+		const wait = Math.min(BACKOFF_CAP, Math.max(1000, due - Date.now()));
+		timer = window.setTimeout(() => void retry(), wait);
+	}
+
+	function retry(options: { force?: boolean; only?: string } = {}) {
+		chain = chain.then(async () => {
+			const storage = local;
+			const send = deliver;
+			if (!storage || !send || !live) return;
+			const outcomes = await flush(storage, outboxKey, send, options).catch(() => []);
+			for (const { envelope, state, error } of outcomes) {
+				note(envelope, state, error);
+				if (state === 'rejected' && error) rejected(error);
+				if (state === 'expired') console.warn('[hmm] gave up on a saved report', error);
+			}
+			if (outcomes.some((o) => o.state === 'sent')) status = L.sentLater;
+			refresh();
+			schedule();
+		});
+		return chain;
+	}
+
+	async function retryNow(only?: string) {
+		if (retrying) return;
+		retrying = only ?? '*';
+		await retry({ force: true, only });
+		retrying = null;
+	}
+
+	function drop(entry: Pending) {
+		if (!local) return;
+		discardPending(local, outboxKey, entry.envelope.id);
+		note(entry.envelope, 'discarded', entry.error);
+		refresh();
+		schedule();
+	}
 
 	const titleOf = (item: Item) => (item.type === 'element' ? labelOf(item.target) : L.screenshot);
 	const imageOf = (attachments: Attachment[], item: Item) => {
@@ -301,11 +420,10 @@
 		view = 'done';
 	}
 
-	function rejected(err: unknown) {
-		const reason = err instanceof SendError ? (err.detail ?? err.message) : String(err);
-		const status = err instanceof SendError && err.status ? ` (${err.status})` : '';
+	function rejected(f: SendFailure) {
+		const status = f.status ? ` (${f.status})` : '';
 		console.error(
-			`[hmm] the report for project "${projectKey}" from ${location.origin} was rejected${status}: ${reason}`,
+			`[hmm] the report for project "${projectKey}" from ${location.origin} was rejected${status}: ${f.message || 'no reason given'}`,
 		);
 	}
 
@@ -318,15 +436,25 @@
 			await deliver(envelope);
 		} catch (err) {
 			const retryable = isRetryable(err);
+			const reason = failureOf(err);
 			if (retryable) console.warn('[hmm] sending failed', err);
-			else rejected(err);
-			if (retryable && local && enqueue(local, outboxKey, envelope)) finish(false);
 			else {
+				rejected(reason);
+				note(envelope, 'rejected', reason);
+			}
+			if (retryable && local && enqueue(local, outboxKey, envelope, err)) {
+				failure = reason;
+				note(envelope, 'pending', reason);
+				refresh();
+				schedule();
+				finish(false);
+			} else {
 				busy = '';
 				error = retryable ? L.failed : L.rejected;
 			}
 			return;
 		}
+		note(envelope, 'sent');
 		finish(true);
 		onSent?.(envelope);
 	}
@@ -414,7 +542,7 @@
 				picking = false;
 				at = null;
 				spot = null;
-				if (view === 'done') view = 'edit';
+				if (view === 'done' || view === 'activity') view = 'edit';
 			});
 	});
 
@@ -475,14 +603,28 @@
 	$effect(() => {
 		if (!enabled || !ready) return;
 		return untrack(() => {
-			const flushOutbox = () => {
-				if (local && deliver) void flush(local, outboxKey, deliver).catch(() => {});
+			const online = () => void retry({ force: true });
+			const visible = () => {
+				if (document.visibilityState === 'visible') void retry();
+			};
+			const synced = (event: StorageEvent) => {
+				if (event.key !== outboxKey) return;
+				refresh();
+				schedule();
 			};
 			const unregister = register({ show, hide, isOpen });
-			addEventListener('online', flushOutbox);
-			flushOutbox();
+			live = true;
+			addEventListener('online', online);
+			addEventListener('storage', synced);
+			document.addEventListener('visibilitychange', visible);
+			refresh();
+			void retry();
 			return () => {
-				removeEventListener('online', flushOutbox);
+				live = false;
+				clearTimeout(timer);
+				removeEventListener('online', online);
+				removeEventListener('storage', synced);
+				document.removeEventListener('visibilitychange', visible);
 				unregister();
 			};
 		});
@@ -542,7 +684,8 @@
 			<Launcher
 				launcher={placed}
 				label={L.launcher}
-				title={L.title}
+				title={outbox.length ? `${L.title} (${waiting})` : L.title}
+				count={outbox.length}
 				hint={L.moveHint}
 				hidden={picking || (open && placed.form === 'floating')}
 				active={open}
@@ -576,7 +719,11 @@
 							<Heading level={2} size="lg" id={ids.title}>{L.title}</Heading>
 							{#if view !== 'done'}
 								<Text as="p" tone="muted" data-id="subtitle">
-									{view === 'review' ? L.reviewIntro : L.subtitle}
+									{view === 'review'
+										? L.reviewIntro
+										: view === 'activity'
+											? L.activityIntro
+											: L.subtitle}
 								</Text>
 							{/if}
 						</Stack>
@@ -643,9 +790,96 @@
 							>
 								{#snippet description()}<span data-id="message">{message}</span>{/snippet}
 							</EmptyState>
+							{#if !delivered && failure}
+								<div class="reason">
+									<Text as="p" tone="muted" size="sm" wrap="anywhere" data-id="reason">
+										{failureText(failure)}
+									</Text>
+								</div>
+							{/if}
 						</div>
 						<footer class="foot end">
+							{#if !delivered}
+								<Button variant="ghost" data-id="show-activity" onclick={() => (view = 'activity')}>
+									{L.activity}
+								</Button>
+							{/if}
 							<Button variant="primary" data-id="done" onclick={hide}>{L.done}</Button>
+						</footer>
+					{:else if view === 'activity'}
+						<div class="body" data-id="activity">
+							{#if outbox.length}
+								<Stack gap="var(--sp-2)">
+									<Text weight="medium">{L.pendingTitle}</Text>
+									{#each outbox as entry (entry.envelope.id)}
+										<Card padding="sm" gap="var(--sp-2)" data-id="pending">
+											<Cluster wrap={false}>
+												<Text truncate grow data-id="pending-excerpt">
+													{excerptOf(entry.envelope) || L.noComment}
+												</Text>
+												<IconButton
+													icon="retry"
+													box="sm"
+													label={L.retry}
+													data-id="retry"
+													disabled={!!retrying}
+													onclick={() => retryNow(entry.envelope.id)}
+												/>
+												<IconButton
+													icon="trash"
+													box="sm"
+													label={L.discardReport}
+													data-id="discard-pending"
+													disabled={!!retrying}
+													onclick={() => drop(entry)}
+												/>
+											</Cluster>
+											<Text tone="muted" size="sm" data-id="pending-meta">{metaOf(entry)}</Text>
+											{#if entry.error}
+												<Text as="p" tone="danger" size="sm" wrap="anywhere" data-id="pending-error">
+													{failureText(entry.error)}
+												</Text>
+											{/if}
+										</Card>
+									{/each}
+								</Stack>
+							{/if}
+							{#if history.length}
+								<Stack gap="var(--sp-2)">
+									<Text weight="medium">{L.historyTitle}</Text>
+									{#each history as record (record.id)}
+										{@const look = STATES[record.state]}
+										<div class="logged" data-id="history" data-state={record.state}>
+											<Cluster wrap={false}>
+												<Badge tone={look.tone} size="sm">{L[look.label]}</Badge>
+												<Text truncate grow>{record.excerpt || L.noComment}</Text>
+												<Text tone="muted" size="sm" numeric>{when(record.at)}</Text>
+											</Cluster>
+											{#if record.error && record.state !== 'pending'}
+												<Text as="p" tone="muted" size="sm" wrap="anywhere" data-id="history-error">
+													{failureText(record.error)}
+												</Text>
+											{/if}
+										</div>
+									{/each}
+								</Stack>
+							{/if}
+						</div>
+						<footer class="foot end">
+							<Button variant="ghost" data-id="back" disabled={!!retrying} onclick={() => (view = 'edit')}>
+								{L.back}
+							</Button>
+							{#if outbox.length}
+								<Button
+									variant="primary"
+									data-id="retry-all"
+									loading={retrying === '*'}
+									disabled={!!retrying}
+									onclick={() => retryNow()}
+								>
+									{L.retryAll}
+								</Button>
+							{/if}
 						</footer>
 					{:else}
 						<div class="body">
@@ -728,6 +962,27 @@
 								<Text as="p" tone="muted" size="sm" role="status">{L.capturing}</Text>
 							{/if}
 							{#if error}<Callout tone="danger" data-id="error">{error}</Callout>{/if}
+							{#if outbox.length}
+								<Callout tone="warn" data-id="pending-note">
+									{waiting}
+									{#snippet actions()}
+										<Button size="sm" data-id="show-activity" onclick={() => (view = 'activity')}>
+											{L.activity}
+										</Button>
+									{/snippet}
+								</Callout>
+							{:else if history.length}
+								<Cluster>
+									<Button
+										variant="link"
+										size="sm"
+										data-id="show-activity"
+										onclick={() => (view = 'activity')}
+									>
+										{L.activity}
+									</Button>
+								</Cluster>
+							{/if}
 						</div>
 						<footer class="foot">
 							<Text tone="muted" size="sm" grow>{L.reviewHint}</Text>
@@ -830,6 +1085,14 @@
 		min-height: 0;
 		padding: var(--sp-4);
 		overflow-y: auto;
+	}
+	.reason {
+		text-align: center;
+	}
+	.logged {
+		display: flex;
+		flex-direction: column;
+		gap: var(--sp-1);
 	}
 	.said {
 		padding: var(--sp-3) var(--sp-4);
